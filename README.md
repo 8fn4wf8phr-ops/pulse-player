@@ -20,6 +20,8 @@ A music player web app built in vanilla HTML, CSS, and JavaScript — no framewo
 
 **6. Shipping it.** The repo went up on GitHub and connected to Vercel for auto-deploy on every push to `main`.
 
+**7. Crossfade and an equalizer.** Switching tracks used to be a hard cut — one `<audio>` element, swap the `src`, done. Crossfade needed two, so the player now runs two audio elements at once, each through its own bass/mid/treble `BiquadFilterNode` chain and gain node, both feeding one shared analyser. Crossfading ramps one element's gain down and the other's up over four seconds — triggered automatically near the end of a track, or on a manual skip — while the equalizer sliders adjust both chains identically so the incoming track already sounds right before it's audible. Both live in a new settings panel, opened from a gear icon next to the library button.
+
 The full history of that progression — every step above as its own commit — is in this repo's [commit log](../../commits/main).
 
 ## Design
@@ -31,12 +33,14 @@ The full history of that progression — every step above as its own commit — 
 ## Features
 
 - Play/pause, seekable progress bar (click, drag, or arrow keys), volume control
-- Next/previous with a 3-second "restart vs. skip back" rule, auto-advance on end, repeat (via `audio.loop`)
+- Next/previous with a 3-second "restart vs. skip back" rule, auto-advance on end, repeat
 - Real shuffle — randomized play order, not just a toggle
+- Crossfade between tracks (auto-triggered near the end of a track, or on manual skip)
+- A 3-band equalizer (bass/mid/treble), applied live via Web Audio `BiquadFilterNode`s
 - Import songs by file picker, folder picker, or drag-and-drop (including whole folders)
 - Automatic title/artist from ID3 tags, with filename-based fallback parsing
 - A library panel to browse and jump to any imported track
-- Library, volume, and playback state persist across reloads (IndexedDB + `localStorage`)
+- Library, volume, playback, crossfade, and EQ settings persist across reloads (IndexedDB + `localStorage`)
 - A canvas-based circular visualizer (idle breathing state; 64 radial frequency bars + a bass-reactive pulsing core while playing), respecting `prefers-reduced-motion`
 
 ## Structure

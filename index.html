@@ -89,8 +89,9 @@
     height: 100%;
   }
 
-  /* Library panel — overlays the art square */
-  .library-panel {
+  /* Library / settings panels — overlay the art square */
+  .library-panel,
+  .settings-panel {
     position: absolute;
     inset: 0;
     background: rgba(20, 18, 26, 0.97);
@@ -102,7 +103,8 @@
     display: flex;
     padding: 6px;
   }
-  .library-panel.open {
+  .library-panel.open,
+  .settings-panel.open {
     opacity: 1;
     pointer-events: auto;
     transform: translateY(0);
@@ -154,6 +156,45 @@
     line-height: 1.5;
     color: var(--text-dim);
   }
+
+  /* Settings panel */
+  .settings-panel {
+    align-items: center;
+    padding: 22px;
+  }
+  .settings-inner {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .settings-heading {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin: 0;
+  }
+  .settings-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+  }
+  .settings-label {
+    font-size: 13px;
+    color: var(--text);
+    flex-shrink: 0;
+    width: 54px;
+  }
+  .settings-toggle {
+    color: var(--text-dim);
+    width: 20px;
+    height: 20px;
+  }
+  .settings-toggle svg { width: 18px; height: 18px; }
+  .settings-toggle.toggled { color: var(--accent); }
 
   .track-info {
     margin-top: 22px;
@@ -282,7 +323,8 @@
     flex-shrink: 0;
   }
 
-  input[type="range"].volume {
+  input[type="range"].volume,
+  input[type="range"].eq-slider {
     -webkit-appearance: none;
     appearance: none;
     flex: 1;
@@ -292,7 +334,8 @@
     outline: none;
   }
 
-  input[type="range"].volume::-webkit-slider-thumb {
+  input[type="range"].volume::-webkit-slider-thumb,
+  input[type="range"].eq-slider::-webkit-slider-thumb {
     -webkit-appearance: none;
     width: 12px;
     height: 12px;
@@ -302,7 +345,8 @@
     box-shadow: 0 0 0 4px var(--accent-dim);
   }
 
-  input[type="range"].volume::-moz-range-thumb {
+  input[type="range"].volume::-moz-range-thumb,
+  input[type="range"].eq-slider::-moz-range-thumb {
     width: 12px;
     height: 12px;
     border: none;
@@ -342,12 +386,13 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .btn, .progress-handle, .library-panel { transition: none; }
+    .btn, .progress-handle, .library-panel, .settings-panel { transition: none; }
   }
 
   .btn:focus-visible,
   .lib-row:focus-visible,
   input.volume:focus-visible,
+  input.eq-slider:focus-visible,
   .progress-bar:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 3px;
@@ -369,13 +414,43 @@
       <button class="btn secondary" id="addFolderBtn" aria-label="Add folder of songs" title="Add folder">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
       </button>
+      <button class="btn secondary" id="settingsBtn" aria-label="Sound settings" aria-pressed="false" title="Sound settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+      </button>
     </div>
   </div>
 
   <div class="art" aria-hidden="true">
     <canvas id="visualizer"></canvas>
+
     <div class="library-panel" id="libraryPanel">
       <div class="library-list" id="libraryList"></div>
+    </div>
+
+    <div class="settings-panel" id="settingsPanel">
+      <div class="settings-inner">
+        <p class="settings-heading">Playback</p>
+        <div class="settings-row">
+          <span class="settings-label">Crossfade</span>
+          <button class="btn settings-toggle" id="crossfadeBtn" aria-label="Toggle crossfade between tracks" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12c2.5-5 5-5 7 0s4.5 5 7 0 4.5-5 6-2"></path></svg>
+          </button>
+        </div>
+
+        <p class="settings-heading">Equalizer</p>
+        <div class="settings-row">
+          <span class="settings-label">Bass</span>
+          <input type="range" class="eq-slider" id="eqBass" min="-12" max="12" step="1" value="0" aria-label="Bass">
+        </div>
+        <div class="settings-row">
+          <span class="settings-label">Mid</span>
+          <input type="range" class="eq-slider" id="eqMid" min="-12" max="12" step="1" value="0" aria-label="Mid">
+        </div>
+        <div class="settings-row">
+          <span class="settings-label">Treble</span>
+          <input type="range" class="eq-slider" id="eqTreble" min="-12" max="12" step="1" value="0" aria-label="Treble">
+        </div>
+      </div>
     </div>
   </div>
 
@@ -431,19 +506,31 @@
   </div>
 </div>
 
-<audio id="audio"></audio>
+<audio id="audioA"></audio>
+<audio id="audioB"></audio>
 <input type="file" id="fileInput" accept="audio/*,.mp3,.m4a,.wav,.ogg,.flac,.aac" multiple hidden>
 <input type="file" id="folderInput" webkitdirectory multiple hidden>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
 <script>
-  const audio = document.getElementById('audio');
+  const audioA = document.getElementById('audioA');
+  const audioB = document.getElementById('audioB');
+  const els = { A: audioA, B: audioB };
+  let activeSlot = 'A';
+  function activeEl() { return els[activeSlot]; }
+  function inactiveSlotKey() { return activeSlot === 'A' ? 'B' : 'A'; }
+  function isActive(el) { return el === activeEl(); }
+
   const canvas = document.getElementById('visualizer');
   const canvasCtx = canvas.getContext('2d');
   const artEl = document.querySelector('.art');
   const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#FF5C7A';
 
-  let audioCtx, analyser, sourceNode, dataArray, bufferLength;
+  const CROSSFADE_SECONDS = 4;
+  let crossfadeInProgress = false;
+
+  let audioCtx, analyser, dataArray, bufferLength;
+  const webAudioSlots = {}; // { A: {source, bass, mid, treble, gain}, B: {...} } — built lazily, once, after a user gesture
   const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   function hexToRgb(hex) {
@@ -464,19 +551,45 @@
   window.addEventListener('resize', resizeCanvas);
   resizeCanvas();
 
+  // Each <audio> element gets its own bass/mid/treble filter chain and gain
+  // node (the gain is what crossfade ramps between 0 and 1), then both
+  // chains feed one shared analyser so the visualizer sees combined output.
+  function buildChain(el) {
+    const source = audioCtx.createMediaElementSource(el);
+    const bass = audioCtx.createBiquadFilter();
+    bass.type = 'lowshelf';
+    bass.frequency.value = 200;
+    const mid = audioCtx.createBiquadFilter();
+    mid.type = 'peaking';
+    mid.frequency.value = 1000;
+    mid.Q.value = 1;
+    const treble = audioCtx.createBiquadFilter();
+    treble.type = 'highshelf';
+    treble.frequency.value = 4000;
+    const gain = audioCtx.createGain();
+    source.connect(bass);
+    bass.connect(mid);
+    mid.connect(treble);
+    treble.connect(gain);
+    gain.connect(analyser);
+    return { source, bass, mid, treble, gain };
+  }
+
   // Web Audio graph can only be created after a user gesture, and
   // createMediaElementSource can only ever be called once per <audio> element.
   function setupAudioGraph() {
     if (audioCtx) return;
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    sourceNode = audioCtx.createMediaElementSource(audio);
     analyser = audioCtx.createAnalyser();
     analyser.fftSize = 128;
     analyser.smoothingTimeConstant = 0.8;
     bufferLength = analyser.frequencyBinCount;
     dataArray = new Uint8Array(bufferLength);
-    sourceNode.connect(analyser);
     analyser.connect(audioCtx.destination);
+
+    webAudioSlots.A = buildChain(audioA);
+    webAudioSlots.B = buildChain(audioB);
+    applyEQ();
   }
 
   function drawIdle(time) {
@@ -576,6 +689,10 @@
   const repeatBtn = document.getElementById('repeatBtn');
   const prevBtn = document.getElementById('prevBtn');
   const nextBtn = document.getElementById('nextBtn');
+  const crossfadeBtn = document.getElementById('crossfadeBtn');
+  const eqBassSlider = document.getElementById('eqBass');
+  const eqMidSlider = document.getElementById('eqMid');
+  const eqTrebleSlider = document.getElementById('eqTreble');
 
   // The library starts empty — songs are added at runtime via the
   // "add songs" / "add folder" buttons or by dragging files onto the page,
@@ -605,35 +722,103 @@
     if (!tracks.length) return;
     if (!playOrder.length) rebuildOrder();
     orderPos = (orderPos + delta + playOrder.length) % playOrder.length;
-    loadTrack(playOrder[orderPos], autoplay);
+    switchTrack(playOrder[orderPos], autoplay);
   }
 
-  function loadTrack(index, autoplay = false) {
+  function setNowPlayingUI(track) {
+    document.getElementById('trackTitle').textContent = track.title;
+    document.getElementById('trackArtist').textContent = track.artist;
+  }
+
+  function resetProgressUI() {
+    progressFill.style.width = '0%';
+    progressHandle.style.left = '0%';
+    currentTimeEl.textContent = '0:00';
+    durationEl.textContent = '0:00';
+  }
+
+  // Hard cut: used whenever crossfade is off, unavailable, or nothing is
+  // currently playing (nothing to fade out of).
+  function hardSwitch(index, autoplay) {
     if (!tracks.length) {
       trackIndex = 0;
-      audio.removeAttribute('src');
+      activeEl().pause();
+      activeEl().removeAttribute('src');
       document.getElementById('trackTitle').textContent = '—';
       document.getElementById('trackArtist').textContent = 'Add a track to get started';
-      progressFill.style.width = '0%';
-      progressHandle.style.left = '0%';
-      currentTimeEl.textContent = '0:00';
-      durationEl.textContent = '0:00';
+      resetProgressUI();
       renderLibrary();
       return;
     }
     trackIndex = (index + tracks.length) % tracks.length;
     const track = tracks[trackIndex];
-    audio.src = track.url;
-    document.getElementById('trackTitle').textContent = track.title;
-    document.getElementById('trackArtist').textContent = track.artist;
-    progressFill.style.width = '0%';
-    progressHandle.style.left = '0%';
-    currentTimeEl.textContent = '0:00';
-    durationEl.textContent = '0:00';
+    const el = activeEl();
+    el.pause();
+    el.src = track.url;
+    setNowPlayingUI(track);
+    resetProgressUI();
     orderPos = Math.max(0, playOrder.indexOf(trackIndex));
     if (track.id != null) localStorage.setItem('pulse:lastTrackId', track.id);
     renderLibrary();
-    if (autoplay) audio.play().catch(() => {});
+    if (autoplay) el.play().catch(() => {});
+  }
+
+  // Crossfades into a new track by playing it on the currently-idle audio
+  // element and ramping gain between the two, falling back to a hard cut
+  // when crossfade is off, the audio graph isn't ready yet, or nothing is
+  // currently playing (there's nothing to fade out of).
+  async function switchTrack(index, autoplay = true) {
+    if (!tracks.length) { hardSwitch(index, autoplay); return; }
+    index = (index + tracks.length) % tracks.length;
+
+    const canCrossfade =
+      audioCtx &&
+      crossfadeBtn.classList.contains('toggled') &&
+      isPlaying &&
+      !crossfadeInProgress &&
+      index !== trackIndex;
+
+    if (!canCrossfade) {
+      hardSwitch(index, autoplay);
+      return;
+    }
+
+    crossfadeInProgress = true;
+    const fromKey = activeSlot;
+    const toKey = inactiveSlotKey();
+    const fromEl = els[fromKey];
+    const toEl = els[toKey];
+    const fromGain = webAudioSlots[fromKey].gain.gain;
+    const toGain = webAudioSlots[toKey].gain.gain;
+    const track = tracks[index];
+
+    toEl.src = track.url;
+    toGain.cancelScheduledValues(audioCtx.currentTime);
+    toGain.setValueAtTime(0, audioCtx.currentTime);
+    try { await toEl.play(); } catch (err) { /* ignore */ }
+
+    const now = audioCtx.currentTime;
+    fromGain.cancelScheduledValues(now);
+    fromGain.setValueAtTime(fromGain.value, now);
+    fromGain.linearRampToValueAtTime(0, now + CROSSFADE_SECONDS);
+    toGain.cancelScheduledValues(now);
+    toGain.setValueAtTime(0, now);
+    toGain.linearRampToValueAtTime(1, now + CROSSFADE_SECONDS);
+
+    activeSlot = toKey;
+    trackIndex = index;
+    orderPos = Math.max(0, playOrder.indexOf(trackIndex));
+    if (track.id != null) localStorage.setItem('pulse:lastTrackId', track.id);
+    setNowPlayingUI(track);
+    renderLibrary();
+
+    setTimeout(() => {
+      fromEl.pause();
+      fromEl.currentTime = 0;
+      fromEl.removeAttribute('src');
+      fromGain.value = 1;
+      crossfadeInProgress = false;
+    }, CROSSFADE_SECONDS * 1000 + 150);
   }
 
   function formatTime(seconds) {
@@ -654,38 +839,67 @@
     if (!tracks.length) { addFilesBtn.click(); return; }
     setupAudioGraph();
     if (audioCtx.state === 'suspended') audioCtx.resume();
+    const el = activeEl();
     if (isPlaying) {
-      audio.pause();
+      el.pause();
     } else {
-      audio.play().catch(() => {});
+      el.play().catch(() => {});
     }
   });
 
-  audio.addEventListener('play', () => setPlayingUI(true));
-  audio.addEventListener('pause', () => setPlayingUI(false));
-
-  audio.addEventListener('loadedmetadata', () => {
-    durationEl.textContent = formatTime(audio.duration);
-  });
-
-  audio.addEventListener('timeupdate', () => {
-    if (isSeeking) return;
-    const pct = audio.duration ? (audio.currentTime / audio.duration) * 100 : 0;
+  function handleTimeUpdate(el) {
+    if (!isActive(el) || isSeeking) return;
+    const pct = el.duration ? (el.currentTime / el.duration) * 100 : 0;
     progressFill.style.width = pct + '%';
     progressHandle.style.left = pct + '%';
     progressBar.setAttribute('aria-valuenow', Math.round(pct));
-    currentTimeEl.textContent = formatTime(audio.currentTime);
+    currentTimeEl.textContent = formatTime(el.currentTime);
+
+    const remaining = el.duration - el.currentTime;
+    if (
+      crossfadeBtn.classList.contains('toggled') &&
+      !crossfadeInProgress &&
+      !repeatBtn.classList.contains('toggled') &&
+      tracks.length > 1 &&
+      el.duration &&
+      remaining > 0 &&
+      remaining <= CROSSFADE_SECONDS
+    ) {
+      const nextIndex = playOrder[(orderPos + 1) % playOrder.length];
+      switchTrack(nextIndex, true);
+    }
+  }
+
+  function handleEnded(el) {
+    if (!isActive(el)) return;
+    if (repeatBtn.classList.contains('toggled')) {
+      el.currentTime = 0;
+      el.play().catch(() => {});
+      return;
+    }
+    if (!crossfadeInProgress) stepTrack(1, true);
+  }
+
+  [audioA, audioB].forEach((el) => {
+    el.addEventListener('play', () => { if (isActive(el)) setPlayingUI(true); });
+    el.addEventListener('pause', () => { if (isActive(el)) setPlayingUI(false); });
+    el.addEventListener('loadedmetadata', () => {
+      if (isActive(el)) durationEl.textContent = formatTime(el.duration);
+    });
+    el.addEventListener('timeupdate', () => handleTimeUpdate(el));
+    el.addEventListener('ended', () => handleEnded(el));
   });
 
   function seekToClientX(clientX) {
+    const el = activeEl();
     const rect = progressBar.getBoundingClientRect();
     let pct = (clientX - rect.left) / rect.width;
     pct = Math.min(1, Math.max(0, pct));
     progressFill.style.width = (pct * 100) + '%';
     progressHandle.style.left = (pct * 100) + '%';
-    if (audio.duration) {
-      audio.currentTime = pct * audio.duration;
-      currentTimeEl.textContent = formatTime(audio.currentTime);
+    if (el.duration) {
+      el.currentTime = pct * el.duration;
+      currentTimeEl.textContent = formatTime(el.currentTime);
     }
   }
 
@@ -699,14 +913,21 @@
   });
   progressBar.addEventListener('pointerup', () => { isSeeking = false; });
   progressBar.addEventListener('keydown', (e) => {
-    if (!audio.duration) return;
-    if (e.key === 'ArrowRight') audio.currentTime = Math.min(audio.duration, audio.currentTime + 5);
-    if (e.key === 'ArrowLeft') audio.currentTime = Math.max(0, audio.currentTime - 5);
+    const el = activeEl();
+    if (!el.duration) return;
+    if (e.key === 'ArrowRight') el.currentTime = Math.min(el.duration, el.currentTime + 5);
+    if (e.key === 'ArrowLeft') el.currentTime = Math.max(0, el.currentTime - 5);
   });
 
+  function applyVolume() {
+    const v = volumeSlider.value / 100;
+    audioA.volume = v;
+    audioB.volume = v;
+  }
+
   volumeSlider.addEventListener('input', () => {
-    audio.volume = volumeSlider.value / 100;
-    volumeIcon.style.opacity = audio.volume === 0 ? '0.4' : '1';
+    applyVolume();
+    volumeIcon.style.opacity = Number(volumeSlider.value) === 0 ? '0.4' : '1';
     localStorage.setItem('pulse:volume', volumeSlider.value);
   });
 
@@ -720,14 +941,35 @@
   repeatBtn.addEventListener('click', () => {
     const active = repeatBtn.classList.toggle('toggled');
     repeatBtn.setAttribute('aria-pressed', active);
-    audio.loop = active;
     localStorage.setItem('pulse:repeat', active ? '1' : '0');
+  });
+
+  crossfadeBtn.addEventListener('click', () => {
+    const active = crossfadeBtn.classList.toggle('toggled');
+    crossfadeBtn.setAttribute('aria-pressed', active);
+    localStorage.setItem('pulse:crossfade', active ? '1' : '0');
+  });
+
+  function applyEQ() {
+    if (!audioCtx) return;
+    ['A', 'B'].forEach((key) => {
+      webAudioSlots[key].bass.gain.value = Number(eqBassSlider.value);
+      webAudioSlots[key].mid.gain.value = Number(eqMidSlider.value);
+      webAudioSlots[key].treble.gain.value = Number(eqTrebleSlider.value);
+    });
+  }
+
+  [[eqBassSlider, 'pulse:eqBass'], [eqMidSlider, 'pulse:eqMid'], [eqTrebleSlider, 'pulse:eqTreble']].forEach(([slider, key]) => {
+    slider.addEventListener('input', () => {
+      localStorage.setItem(key, slider.value);
+      applyEQ();
+    });
   });
 
   prevBtn.addEventListener('click', () => {
     // Restart current track if more than 3s in, otherwise go to previous track
-    if (audio.currentTime > 3) {
-      audio.currentTime = 0;
+    if (activeEl().currentTime > 3) {
+      activeEl().currentTime = 0;
     } else {
       stepTrack(-1, isPlaying);
     }
@@ -735,12 +977,6 @@
 
   nextBtn.addEventListener('click', () => {
     stepTrack(1, isPlaying);
-  });
-
-  audio.addEventListener('ended', () => {
-    if (!repeatBtn.classList.contains('toggled')) {
-      stepTrack(1, true);
-    }
   });
 
   // ---------------------------------------------------------------------
@@ -756,8 +992,11 @@
   const fileInput = document.getElementById('fileInput');
   const folderInput = document.getElementById('folderInput');
   const dropOverlay = document.getElementById('dropOverlay');
+  const settingsBtn = document.getElementById('settingsBtn');
+  const settingsPanel = document.getElementById('settingsPanel');
 
   function openLibrary() {
+    closeSettings();
     libraryPanel.classList.add('open');
     libraryBtn.setAttribute('aria-pressed', 'true');
   }
@@ -768,8 +1007,22 @@
   libraryBtn.addEventListener('click', () => {
     if (libraryPanel.classList.contains('open')) closeLibrary(); else openLibrary();
   });
+
+  function openSettings() {
+    closeLibrary();
+    settingsPanel.classList.add('open');
+    settingsBtn.setAttribute('aria-pressed', 'true');
+  }
+  function closeSettings() {
+    settingsPanel.classList.remove('open');
+    settingsBtn.setAttribute('aria-pressed', 'false');
+  }
+  settingsBtn.addEventListener('click', () => {
+    if (settingsPanel.classList.contains('open')) closeSettings(); else openSettings();
+  });
+
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeLibrary();
+    if (e.key === 'Escape') { closeLibrary(); closeSettings(); }
   });
 
   function renderLibrary() {
@@ -800,7 +1053,7 @@
       row.appendChild(titleSpan);
       row.appendChild(artistSpan);
       row.addEventListener('click', () => {
-        loadTrack(i, true);
+        switchTrack(i, true);
         closeLibrary();
       });
       libraryList.appendChild(row);
@@ -924,7 +1177,7 @@
     if (!added) return;
     rebuildOrder();
     renderLibrary();
-    if (wasEmpty) loadTrack(0);
+    if (wasEmpty) hardSwitch(0, false);
   }
 
   async function loadLibraryFromDB() {
@@ -943,8 +1196,8 @@
   function restoreSettings() {
     const savedVolume = localStorage.getItem('pulse:volume');
     if (savedVolume !== null) volumeSlider.value = savedVolume;
-    audio.volume = volumeSlider.value / 100;
-    volumeIcon.style.opacity = audio.volume === 0 ? '0.4' : '1';
+    applyVolume();
+    volumeIcon.style.opacity = Number(volumeSlider.value) === 0 ? '0.4' : '1';
 
     if (localStorage.getItem('pulse:shuffle') === '1') {
       shuffleBtn.classList.add('toggled');
@@ -953,8 +1206,18 @@
     if (localStorage.getItem('pulse:repeat') === '1') {
       repeatBtn.classList.add('toggled');
       repeatBtn.setAttribute('aria-pressed', 'true');
-      audio.loop = true;
     }
+    if (localStorage.getItem('pulse:crossfade') === '1') {
+      crossfadeBtn.classList.add('toggled');
+      crossfadeBtn.setAttribute('aria-pressed', 'true');
+    }
+
+    const savedBass = localStorage.getItem('pulse:eqBass');
+    const savedMid = localStorage.getItem('pulse:eqMid');
+    const savedTreble = localStorage.getItem('pulse:eqTreble');
+    if (savedBass !== null) eqBassSlider.value = savedBass;
+    if (savedMid !== null) eqMidSlider.value = savedMid;
+    if (savedTreble !== null) eqTrebleSlider.value = savedTreble;
   }
 
   async function init() {
@@ -969,7 +1232,7 @@
     }
     trackIndex = startIndex;
     rebuildOrder();
-    loadTrack(startIndex);
+    hardSwitch(startIndex, false);
   }
 
   addFilesBtn.addEventListener('click', () => fileInput.click());
