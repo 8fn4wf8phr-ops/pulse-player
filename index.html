@@ -43,6 +43,33 @@
     box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.6);
   }
 
+  /* Library bar */
+  .lib-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+  }
+
+  .lib-toggle {
+    width: auto;
+    height: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.02em;
+  }
+  .lib-toggle svg { width: 15px; height: 15px; }
+
+  .lib-actions {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .lib-actions .btn.secondary svg { width: 18px; height: 18px; }
+
   .art {
     width: 100%;
     aspect-ratio: 1 / 1;
@@ -60,6 +87,72 @@
     inset: 0;
     width: 100%;
     height: 100%;
+  }
+
+  /* Library panel — overlays the art square */
+  .library-panel {
+    position: absolute;
+    inset: 0;
+    background: rgba(20, 18, 26, 0.97);
+    border-radius: var(--radius);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(6px);
+    transition: opacity 0.18s ease, transform 0.18s ease;
+    display: flex;
+    padding: 6px;
+  }
+  .library-panel.open {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
+
+  .library-list {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 4px;
+  }
+
+  .lib-row {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    background: none;
+    border: none;
+    border-radius: 10px;
+    padding: 9px 10px;
+    text-align: left;
+    cursor: pointer;
+    color: var(--text);
+    font: inherit;
+  }
+  .lib-row:hover { background: var(--surface-raised); }
+  .lib-row.active { background: var(--accent-dim); }
+  .lib-row.active .lib-row-title { color: var(--accent); }
+
+  .lib-row-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 500;
+    font-size: 13px;
+  }
+  .lib-row-artist {
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  .lib-empty {
+    margin: auto;
+    max-width: 220px;
+    text-align: center;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-dim);
   }
 
   .track-info {
@@ -219,11 +312,41 @@
     box-shadow: 0 0 0 4px var(--accent-dim);
   }
 
+  /* Drag-and-drop overlay, covers the viewport while files are dragged in */
+  .dropzone-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(20, 18, 26, 0.88);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+    z-index: 999;
+  }
+  .dropzone-overlay.active { opacity: 1; pointer-events: auto; }
+
+  .dropzone-inner {
+    border: 2px dashed var(--accent);
+    border-radius: 20px;
+    padding: 40px 56px;
+    text-align: center;
+  }
+  .dropzone-inner svg { width: 30px; height: 30px; color: var(--accent); margin-bottom: 12px; }
+  .dropzone-inner p {
+    margin: 0;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    color: var(--text);
+  }
+
   @media (prefers-reduced-motion: reduce) {
-    .btn, .progress-handle { transition: none; }
+    .btn, .progress-handle, .library-panel { transition: none; }
   }
 
   .btn:focus-visible,
+  .lib-row:focus-visible,
   input.volume:focus-visible,
   .progress-bar:focus-visible {
     outline: 2px solid var(--accent);
@@ -234,8 +357,26 @@
 <body>
 
 <div class="player">
+  <div class="lib-bar">
+    <button class="btn secondary lib-toggle" id="libraryBtn" aria-label="Show library" aria-pressed="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+      <span id="libCount">0 tracks</span>
+    </button>
+    <div class="lib-actions">
+      <button class="btn secondary" id="addFilesBtn" aria-label="Add songs" title="Add songs">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+      </button>
+      <button class="btn secondary" id="addFolderBtn" aria-label="Add folder of songs" title="Add folder">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+      </button>
+    </div>
+  </div>
+
   <div class="art" aria-hidden="true">
     <canvas id="visualizer"></canvas>
+    <div class="library-panel" id="libraryPanel">
+      <div class="library-list" id="libraryList"></div>
+    </div>
   </div>
 
   <div class="track-info">
@@ -283,8 +424,18 @@
   </div>
 </div>
 
-<audio id="audio"></audio>
+<div class="dropzone-overlay" id="dropOverlay">
+  <div class="dropzone-inner">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+    <p>Drop mp3s or a folder to add them</p>
+  </div>
+</div>
 
+<audio id="audio"></audio>
+<input type="file" id="fileInput" accept="audio/*,.mp3,.m4a,.wav,.ogg,.flac,.aac" multiple hidden>
+<input type="file" id="folderInput" webkitdirectory multiple hidden>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
 <script>
   const audio = document.getElementById('audio');
   const canvas = document.getElementById('visualizer');
@@ -426,32 +577,64 @@
   const prevBtn = document.getElementById('prevBtn');
   const nextBtn = document.getElementById('nextBtn');
 
-  audio.volume = volumeSlider.value / 100;
-
-  // Add your own tracks here. Files should live in a "songs" folder
-  // next to this HTML file, e.g. songs/song-one.mp3
-  const tracks = [
-    { title: 'Song One', artist: 'Artist Name', src: 'song-one.mp3' },
-    { title: 'Song Two', artist: 'Artist Name', src: 'song-two.mp3' },
-  ];
-
+  // The library starts empty — songs are added at runtime via the
+  // "add songs" / "add folder" buttons or by dragging files onto the page,
+  // then persisted in IndexedDB so they survive a reload.
+  let tracks = [];
   let trackIndex = 0;
+  let playOrder = [];
+  let orderPos = 0;
+
+  // Keeps the current track first so shuffling doesn't yank playback
+  // sideways; rebuild whenever the library or the shuffle toggle changes.
+  function rebuildOrder() {
+    const indices = tracks.map((_, i) => i);
+    if (shuffleBtn.classList.contains('toggled')) {
+      for (let i = indices.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [indices[i], indices[j]] = [indices[j], indices[i]];
+      }
+      const pos = indices.indexOf(trackIndex);
+      if (pos > 0) [indices[0], indices[pos]] = [indices[pos], indices[0]];
+    }
+    playOrder = indices;
+    orderPos = Math.max(0, playOrder.indexOf(trackIndex));
+  }
+
+  function stepTrack(delta, autoplay) {
+    if (!tracks.length) return;
+    if (!playOrder.length) rebuildOrder();
+    orderPos = (orderPos + delta + playOrder.length) % playOrder.length;
+    loadTrack(playOrder[orderPos], autoplay);
+  }
 
   function loadTrack(index, autoplay = false) {
-    if (!tracks.length) return;
+    if (!tracks.length) {
+      trackIndex = 0;
+      audio.removeAttribute('src');
+      document.getElementById('trackTitle').textContent = '—';
+      document.getElementById('trackArtist').textContent = 'Add a track to get started';
+      progressFill.style.width = '0%';
+      progressHandle.style.left = '0%';
+      currentTimeEl.textContent = '0:00';
+      durationEl.textContent = '0:00';
+      renderLibrary();
+      return;
+    }
     trackIndex = (index + tracks.length) % tracks.length;
     const track = tracks[trackIndex];
-    audio.src = track.src;
+    audio.src = track.url;
     document.getElementById('trackTitle').textContent = track.title;
     document.getElementById('trackArtist').textContent = track.artist;
     progressFill.style.width = '0%';
     progressHandle.style.left = '0%';
     currentTimeEl.textContent = '0:00';
     durationEl.textContent = '0:00';
+    orderPos = Math.max(0, playOrder.indexOf(trackIndex));
+    if (track.id != null) localStorage.setItem('pulse:lastTrackId', track.id);
+    renderLibrary();
     if (autoplay) audio.play().catch(() => {});
   }
-
-  if (tracks.length) loadTrack(0);
 
   function formatTime(seconds) {
     if (!isFinite(seconds) || isNaN(seconds)) return '0:00';
@@ -468,7 +651,7 @@
   }
 
   playBtn.addEventListener('click', () => {
-    if (!tracks.length) return; // add tracks to the array above first
+    if (!tracks.length) { addFilesBtn.click(); return; }
     setupAudioGraph();
     if (audioCtx.state === 'suspended') audioCtx.resume();
     if (isPlaying) {
@@ -524,17 +707,21 @@
   volumeSlider.addEventListener('input', () => {
     audio.volume = volumeSlider.value / 100;
     volumeIcon.style.opacity = audio.volume === 0 ? '0.4' : '1';
+    localStorage.setItem('pulse:volume', volumeSlider.value);
   });
 
   shuffleBtn.addEventListener('click', () => {
     const active = shuffleBtn.classList.toggle('toggled');
     shuffleBtn.setAttribute('aria-pressed', active);
+    localStorage.setItem('pulse:shuffle', active ? '1' : '0');
+    rebuildOrder();
   });
 
   repeatBtn.addEventListener('click', () => {
     const active = repeatBtn.classList.toggle('toggled');
     repeatBtn.setAttribute('aria-pressed', active);
     audio.loop = active;
+    localStorage.setItem('pulse:repeat', active ? '1' : '0');
   });
 
   prevBtn.addEventListener('click', () => {
@@ -542,19 +729,322 @@
     if (audio.currentTime > 3) {
       audio.currentTime = 0;
     } else {
-      loadTrack(trackIndex - 1, isPlaying);
+      stepTrack(-1, isPlaying);
     }
   });
 
   nextBtn.addEventListener('click', () => {
-    loadTrack(trackIndex + 1, isPlaying);
+    stepTrack(1, isPlaying);
   });
 
   audio.addEventListener('ended', () => {
     if (!repeatBtn.classList.contains('toggled')) {
-      loadTrack(trackIndex + 1, true);
+      stepTrack(1, true);
     }
   });
+
+  // ---------------------------------------------------------------------
+  // Library: import + browse tracks
+  // ---------------------------------------------------------------------
+
+  const libraryBtn = document.getElementById('libraryBtn');
+  const libraryPanel = document.getElementById('libraryPanel');
+  const libraryList = document.getElementById('libraryList');
+  const libCountEl = document.getElementById('libCount');
+  const addFilesBtn = document.getElementById('addFilesBtn');
+  const addFolderBtn = document.getElementById('addFolderBtn');
+  const fileInput = document.getElementById('fileInput');
+  const folderInput = document.getElementById('folderInput');
+  const dropOverlay = document.getElementById('dropOverlay');
+
+  function openLibrary() {
+    libraryPanel.classList.add('open');
+    libraryBtn.setAttribute('aria-pressed', 'true');
+  }
+  function closeLibrary() {
+    libraryPanel.classList.remove('open');
+    libraryBtn.setAttribute('aria-pressed', 'false');
+  }
+  libraryBtn.addEventListener('click', () => {
+    if (libraryPanel.classList.contains('open')) closeLibrary(); else openLibrary();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeLibrary();
+  });
+
+  function renderLibrary() {
+    libCountEl.textContent = `${tracks.length} track${tracks.length === 1 ? '' : 's'}`;
+    libraryList.innerHTML = '';
+
+    if (!tracks.length) {
+      const empty = document.createElement('p');
+      empty.className = 'lib-empty';
+      empty.textContent = 'No tracks yet — use the + or folder button above, or drop mp3 files anywhere on the page.';
+      libraryList.appendChild(empty);
+      return;
+    }
+
+    tracks.forEach((track, i) => {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'lib-row' + (i === trackIndex ? ' active' : '');
+
+      const titleSpan = document.createElement('span');
+      titleSpan.className = 'lib-row-title';
+      titleSpan.textContent = track.title;
+
+      const artistSpan = document.createElement('span');
+      artistSpan.className = 'lib-row-artist';
+      artistSpan.textContent = track.artist;
+
+      row.appendChild(titleSpan);
+      row.appendChild(artistSpan);
+      row.addEventListener('click', () => {
+        loadTrack(i, true);
+        closeLibrary();
+      });
+      libraryList.appendChild(row);
+    });
+  }
+
+  const AUDIO_EXT_RE = /\.(mp3|m4a|wav|ogg|oga|flac|aac|weba)$/i;
+  function isAudioFile(file) {
+    return (file.type && file.type.startsWith('audio/')) || AUDIO_EXT_RE.test(file.name);
+  }
+
+  // "Artist - Title.mp3" (optionally prefixed with a track number) is the
+  // most common naming convention; anything else just becomes the title.
+  function parseFilenameMeta(filename) {
+    const base = filename.replace(/\.[^/.]+$/, '');
+    const cleaned = base.replace(/^\s*\d+[\s._-]+/, '').trim();
+    const match = cleaned.match(/^(.+?)\s*[-–—]\s*(.+)$/);
+    if (match) {
+      return { artist: match[1].trim(), title: match[2].trim() };
+    }
+    return { artist: 'Unknown Artist', title: cleaned || filename };
+  }
+
+  function readTags(file) {
+    return new Promise((resolve) => {
+      if (!window.jsmediatags) { resolve(null); return; }
+      window.jsmediatags.read(file, {
+        onSuccess: (tag) => resolve(tag.tags),
+        onError: () => resolve(null),
+      });
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // Persistence: the imported files themselves live in IndexedDB (as
+  // Blobs) so the library survives a reload — object URLs alone don't.
+  // ---------------------------------------------------------------------
+
+  const DB_NAME = 'pulse-player';
+  const STORE_NAME = 'tracks';
+  let dbPromise = null;
+
+  function getDB() {
+    if (!dbPromise) {
+      dbPromise = new Promise((resolve, reject) => {
+        if (!window.indexedDB) { reject(new Error('indexedDB unavailable')); return; }
+        const req = indexedDB.open(DB_NAME, 1);
+        req.onupgradeneeded = () => {
+          if (!req.result.objectStoreNames.contains(STORE_NAME)) {
+            req.result.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
+          }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      }).catch((err) => {
+        console.warn('Pulse: library persistence unavailable', err);
+        return null;
+      });
+    }
+    return dbPromise;
+  }
+
+  async function dbAddTrack(record) {
+    const db = await getDB();
+    if (!db) return null;
+    return new Promise((resolve, reject) => {
+      const store = db.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME);
+      const req = store.add(record);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function dbGetAllTracks() {
+    const db = await getDB();
+    if (!db) return [];
+    return new Promise((resolve, reject) => {
+      const store = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME);
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  // Guards against re-adding the same file twice (e.g. dropping the same
+  // folder again in a later session, once it's already persisted).
+  const knownFileKeys = new Set();
+
+  async function addFiles(fileList) {
+    const files = Array.from(fileList || []).filter(isAudioFile);
+    if (!files.length) return;
+
+    const wasEmpty = tracks.length === 0;
+    let added = false;
+
+    for (const file of files) {
+      const dedupeKey = `${file.name}:${file.size}`;
+      if (knownFileKeys.has(dedupeKey)) continue;
+      knownFileKeys.add(dedupeKey);
+
+      const fallback = parseFilenameMeta(file.name);
+      const tags = await readTags(file);
+      const title = (tags && tags.title) || fallback.title;
+      const artist = (tags && tags.artist) || fallback.artist;
+
+      const track = { id: null, title, artist, url: URL.createObjectURL(file) };
+      tracks.push(track);
+      added = true;
+      renderLibrary();
+
+      dbAddTrack({ title, artist, name: file.name, size: file.size, type: file.type, data: file })
+        .then((id) => {
+          track.id = id;
+          if (id != null && tracks[trackIndex] === track) {
+            localStorage.setItem('pulse:lastTrackId', id);
+          }
+        })
+        .catch(() => {});
+    }
+
+    if (!added) return;
+    rebuildOrder();
+    renderLibrary();
+    if (wasEmpty) loadTrack(0);
+  }
+
+  async function loadLibraryFromDB() {
+    let records = [];
+    try {
+      records = await dbGetAllTracks();
+    } catch (err) {
+      records = [];
+    }
+    records.forEach((rec) => {
+      knownFileKeys.add(`${rec.name}:${rec.size}`);
+      tracks.push({ id: rec.id, title: rec.title, artist: rec.artist, url: URL.createObjectURL(rec.data) });
+    });
+  }
+
+  function restoreSettings() {
+    const savedVolume = localStorage.getItem('pulse:volume');
+    if (savedVolume !== null) volumeSlider.value = savedVolume;
+    audio.volume = volumeSlider.value / 100;
+    volumeIcon.style.opacity = audio.volume === 0 ? '0.4' : '1';
+
+    if (localStorage.getItem('pulse:shuffle') === '1') {
+      shuffleBtn.classList.add('toggled');
+      shuffleBtn.setAttribute('aria-pressed', 'true');
+    }
+    if (localStorage.getItem('pulse:repeat') === '1') {
+      repeatBtn.classList.add('toggled');
+      repeatBtn.setAttribute('aria-pressed', 'true');
+      audio.loop = true;
+    }
+  }
+
+  async function init() {
+    restoreSettings();
+    await loadLibraryFromDB();
+
+    let startIndex = 0;
+    const lastId = Number(localStorage.getItem('pulse:lastTrackId'));
+    if (lastId) {
+      const idx = tracks.findIndex((t) => t.id === lastId);
+      if (idx >= 0) startIndex = idx;
+    }
+    trackIndex = startIndex;
+    rebuildOrder();
+    loadTrack(startIndex);
+  }
+
+  addFilesBtn.addEventListener('click', () => fileInput.click());
+  addFolderBtn.addEventListener('click', () => folderInput.click());
+  fileInput.addEventListener('change', () => {
+    addFiles(fileInput.files);
+    fileInput.value = '';
+  });
+  folderInput.addEventListener('change', () => {
+    addFiles(folderInput.files);
+    folderInput.value = '';
+  });
+
+  // Recursively walks dropped folders (Chrome/Edge/Firefox) via the
+  // webkitGetAsEntry API; falls back to the flat file list elsewhere.
+  async function collectFilesFromDataTransfer(dataTransfer) {
+    const items = dataTransfer.items;
+    if (!items || !items.length || !items[0].webkitGetAsEntry) {
+      return Array.from(dataTransfer.files || []);
+    }
+
+    const entries = [];
+    for (let i = 0; i < items.length; i++) {
+      const entry = items[i].webkitGetAsEntry && items[i].webkitGetAsEntry();
+      if (entry) entries.push(entry);
+    }
+
+    async function readEntry(entry) {
+      if (entry.isFile) {
+        return [await new Promise((resolve, reject) => entry.file(resolve, reject))];
+      }
+      if (entry.isDirectory) {
+        const reader = entry.createReader();
+        let allEntries = [];
+        let batch;
+        do {
+          batch = await new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+          allEntries = allEntries.concat(batch);
+        } while (batch.length > 0);
+        const nested = await Promise.all(allEntries.map(readEntry));
+        return nested.flat();
+      }
+      return [];
+    }
+
+    const results = await Promise.all(entries.map(readEntry));
+    return results.flat();
+  }
+
+  let dragDepth = 0;
+  function isFileDrag(e) {
+    return e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
+  }
+  ['dragenter', 'dragover'].forEach((evt) => {
+    window.addEventListener(evt, (e) => {
+      if (!isFileDrag(e)) return;
+      e.preventDefault();
+      if (evt === 'dragenter') dragDepth++;
+      dropOverlay.classList.add('active');
+    });
+  });
+  window.addEventListener('dragleave', () => {
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) dropOverlay.classList.remove('active');
+  });
+  window.addEventListener('drop', async (e) => {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    dragDepth = 0;
+    dropOverlay.classList.remove('active');
+    const files = await collectFilesFromDataTransfer(e.dataTransfer);
+    addFiles(files);
+  });
+
+  init();
 </script>
 
 </body>
