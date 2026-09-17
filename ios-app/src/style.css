@@ -1,0 +1,416 @@
+  :root {
+    --bg: #14121A;
+    --surface: #1E1B26;
+    --surface-raised: #26222F;
+    --text: #F2EFEA;
+    --text-dim: #9A93A6;
+    --accent: #FF5C7A;
+    --accent-dim: rgba(255, 92, 122, 0.18);
+    --track-bg: #362F42;
+    --radius: 18px;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  .player {
+    width: 100%;
+    max-width: 380px;
+    background: var(--surface);
+    border-radius: 28px;
+    padding: 28px;
+    box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.6);
+  }
+
+  /* Library bar */
+  .lib-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+  }
+
+  .lib-toggle {
+    width: auto;
+    height: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.02em;
+  }
+  .lib-toggle svg { width: 15px; height: 15px; }
+
+  .lib-actions {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .lib-actions .btn.secondary svg { width: 18px; height: 18px; }
+
+  .art {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    border-radius: var(--radius);
+    background: linear-gradient(155deg, #3A2E45 0%, #241E2C 60%, #1A1621 100%);
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .art canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* Library / settings panels — overlay the art square */
+  .library-panel,
+  .settings-panel {
+    position: absolute;
+    inset: 0;
+    background: rgba(20, 18, 26, 0.97);
+    border-radius: var(--radius);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(6px);
+    transition: opacity 0.18s ease, transform 0.18s ease;
+    display: flex;
+    padding: 6px;
+  }
+  .library-panel.open,
+  .settings-panel.open {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
+
+  .library-list {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 4px;
+  }
+
+  .lib-row {
+    display: flex;
+    align-items: stretch;
+    border-radius: 10px;
+    transition: background-color 0.6s ease;
+  }
+  .lib-row:hover { background: var(--surface-raised); }
+  .lib-row.active { background: var(--accent-dim); }
+  .lib-row.active .lib-row-title { color: var(--accent); transition: color 0.6s ease; }
+
+  .lib-row-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    background: none;
+    border: none;
+    padding: 9px 10px;
+    text-align: left;
+    cursor: pointer;
+    color: var(--text);
+    font: inherit;
+    min-width: 0;
+  }
+
+  .lib-row-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 500;
+    font-size: 13px;
+  }
+  .lib-row-artist {
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  .lib-row-remove {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 15px;
+    line-height: 1;
+    padding: 0 12px;
+    display: flex;
+    align-items: center;
+  }
+  .lib-row-remove:hover { color: var(--accent); }
+
+  .lib-empty {
+    margin: auto;
+    max-width: 220px;
+    text-align: center;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-dim);
+  }
+
+  /* Settings panel */
+  .settings-panel {
+    align-items: center;
+    padding: 22px;
+  }
+  .settings-inner {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .settings-heading {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin: 0;
+  }
+  .settings-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+  }
+  .settings-label {
+    font-size: 13px;
+    color: var(--text);
+    flex-shrink: 0;
+    width: 54px;
+  }
+  .settings-toggle {
+    color: var(--text-dim);
+    width: 20px;
+    height: 20px;
+  }
+  .settings-toggle svg { width: 18px; height: 18px; }
+  .settings-toggle.toggled { color: var(--accent); }
+
+  .track-info {
+    margin-top: 22px;
+    text-align: left;
+  }
+
+  .track-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: 22px;
+    margin: 0 0 4px;
+    letter-spacing: -0.01em;
+  }
+
+  .track-artist {
+    font-size: 14px;
+    color: var(--text-dim);
+    margin: 0;
+  }
+
+  /* Progress */
+  .progress-wrap {
+    margin-top: 24px;
+  }
+
+  .progress-bar {
+    position: relative;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--track-bg);
+    cursor: pointer;
+  }
+
+  .progress-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 0%;
+    background: var(--accent);
+    border-radius: 999px;
+    transition: background-color 0.6s ease;
+  }
+
+  .progress-handle {
+    position: absolute;
+    top: 50%;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: var(--text);
+    transform: translate(-50%, -50%);
+    left: 0%;
+    box-shadow: 0 0 0 4px var(--accent-dim);
+    opacity: 0;
+    transition: opacity 0.15s ease, box-shadow 0.6s ease;
+  }
+
+  .progress-bar:hover .progress-handle { opacity: 1; }
+
+  .time-row {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 8px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  /* Controls */
+  .controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 22px;
+    margin-top: 26px;
+  }
+
+  .btn {
+    background: none;
+    border: none;
+    color: var(--text);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: color 0.15s ease, transform 0.1s ease;
+  }
+
+  .btn:hover { color: var(--accent); }
+  .btn:active { transform: scale(0.92); }
+
+  .btn.secondary {
+    color: var(--text-dim);
+    width: 20px;
+    height: 20px;
+  }
+  .btn.secondary svg { width: 18px; height: 18px; }
+
+  .btn.skip svg { width: 22px; height: 22px; }
+
+  .btn.play {
+    width: 58px;
+    height: 58px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: var(--bg);
+    transition: color 0.15s ease, transform 0.1s ease, background-color 0.6s ease;
+  }
+  .btn.play:hover { color: var(--bg); filter: brightness(1.08); }
+  .btn.play svg { width: 22px; height: 22px; }
+
+  .btn.toggled { color: var(--accent); transition: color 0.6s ease; }
+
+  /* Volume */
+  .volume-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 26px;
+  }
+
+  .volume-row svg {
+    width: 16px;
+    height: 16px;
+    color: var(--text-dim);
+    flex-shrink: 0;
+  }
+
+  input[type="range"].volume,
+  input[type="range"].eq-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    flex: 1;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--track-bg);
+    outline: none;
+  }
+
+  input[type="range"].volume::-webkit-slider-thumb,
+  input[type="range"].eq-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--text);
+    cursor: pointer;
+    box-shadow: 0 0 0 4px var(--accent-dim);
+    transition: box-shadow 0.6s ease;
+  }
+
+  input[type="range"].volume::-moz-range-thumb,
+  input[type="range"].eq-slider::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border: none;
+    border-radius: 50%;
+    background: var(--text);
+    cursor: pointer;
+    box-shadow: 0 0 0 4px var(--accent-dim);
+    transition: box-shadow 0.6s ease;
+  }
+
+  /* Drag-and-drop overlay, covers the viewport while files are dragged in */
+  .dropzone-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(20, 18, 26, 0.88);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+    z-index: 999;
+  }
+  .dropzone-overlay.active { opacity: 1; pointer-events: auto; }
+
+  .dropzone-inner {
+    border: 2px dashed var(--accent);
+    border-radius: 20px;
+    padding: 40px 56px;
+    text-align: center;
+  }
+  .dropzone-inner svg { width: 30px; height: 30px; color: var(--accent); margin-bottom: 12px; }
+  .dropzone-inner p {
+    margin: 0;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    color: var(--text);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .btn, .progress-handle, .library-panel, .settings-panel { transition: none; }
+  }
+
+  .btn:focus-visible,
+  .lib-row-main:focus-visible,
+  .lib-row-remove:focus-visible,
+  input.volume:focus-visible,
+  input.eq-slider:focus-visible,
+  .progress-bar:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }

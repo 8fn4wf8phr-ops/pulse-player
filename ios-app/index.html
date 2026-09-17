@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Pulse</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+
+
+<div class="player">
+  <div class="lib-bar">
+    <button class="btn secondary lib-toggle" id="libraryBtn" aria-label="Show library" aria-pressed="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+      <span id="libCount">0 tracks</span>
+    </button>
+    <div class="lib-actions">
+      <button class="btn secondary" id="addFilesBtn" aria-label="Add songs" title="Add songs">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+      </button>
+      <button class="btn secondary" id="addFolderBtn" aria-label="Add folder of songs" title="Add folder">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+      </button>
+      <button class="btn secondary" id="settingsBtn" aria-label="Sound settings" aria-pressed="false" title="Sound settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="art" aria-hidden="true">
+    <canvas id="visualizer"></canvas>
+
+    <div class="library-panel" id="libraryPanel">
+      <div class="library-list" id="libraryList"></div>
+    </div>
+
+    <div class="settings-panel" id="settingsPanel">
+      <div class="settings-inner">
+        <p class="settings-heading">Playback</p>
+        <div class="settings-row">
+          <span class="settings-label">Crossfade</span>
+          <button class="btn settings-toggle" id="crossfadeBtn" aria-label="Toggle crossfade between tracks" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12c2.5-5 5-5 7 0s4.5 5 7 0 4.5-5 6-2"></path></svg>
+          </button>
+        </div>
+
+        <p class="settings-heading">Equalizer</p>
+        <div class="settings-row">
+          <span class="settings-label">Bass</span>
+          <input type="range" class="eq-slider" id="eqBass" min="-12" max="12" step="1" value="0" aria-label="Bass">
+        </div>
+        <div class="settings-row">
+          <span class="settings-label">Mid</span>
+          <input type="range" class="eq-slider" id="eqMid" min="-12" max="12" step="1" value="0" aria-label="Mid">
+        </div>
+        <div class="settings-row">
+          <span class="settings-label">Treble</span>
+          <input type="range" class="eq-slider" id="eqTreble" min="-12" max="12" step="1" value="0" aria-label="Treble">
+        </div>
+
+        <p class="settings-heading">Library</p>
+        <div class="settings-row">
+          <span class="settings-label">Export</span>
+          <button class="btn settings-toggle" id="exportBtn" aria-label="Export library as a zip file" title="Export library">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          </button>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label">Import</span>
+          <button class="btn settings-toggle" id="importBtn" aria-label="Import library from a zip file" title="Import library">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="track-info">
+    <p class="track-title" id="trackTitle">—</p>
+    <p class="track-artist" id="trackArtist">Add a track to get started</p>
+  </div>
+
+  <div class="progress-wrap">
+    <div class="progress-bar" id="progressBar" role="slider" aria-label="Seek" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
+      <div class="progress-fill" id="progressFill"></div>
+      <div class="progress-handle" id="progressHandle"></div>
+    </div>
+    <div class="time-row">
+      <span id="currentTime">0:00</span>
+      <span id="duration">0:00</span>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="btn secondary" id="shuffleBtn" aria-label="Shuffle" aria-pressed="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></svg>
+    </button>
+
+    <button class="btn skip" id="prevBtn" aria-label="Previous track">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zM9.5 12l10 6.5v-13z"></path></svg>
+    </button>
+
+    <button class="btn play" id="playBtn" aria-label="Play">
+      <svg id="playIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>
+      <svg id="pauseIcon" viewBox="0 0 24 24" fill="currentColor" style="display:none;"><path d="M7 5h4v14H7zM13 5h4v14h-4z"></path></svg>
+    </button>
+
+    <button class="btn skip" id="nextBtn" aria-label="Next track">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM4.5 5.5v13l10-6.5z"></path></svg>
+    </button>
+
+    <button class="btn secondary" id="repeatBtn" aria-label="Repeat" aria-pressed="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
+    </button>
+  </div>
+
+  <div class="volume-row">
+    <svg id="volumeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.5 8.5a5 5 0 0 1 0 7"></path></svg>
+    <input type="range" class="volume" id="volumeSlider" min="0" max="100" value="70" aria-label="Volume">
+  </div>
+</div>
+
+<div class="dropzone-overlay" id="dropOverlay">
+  <div class="dropzone-inner">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+    <p>Drop mp3s or a folder to add them</p>
+  </div>
+</div>
+
+<audio id="audioA"></audio>
+<audio id="audioB"></audio>
+<input type="file" id="fileInput" accept="audio/*,.mp3,.m4a,.wav,.ogg,.flac,.aac" multiple hidden>
+<input type="file" id="folderInput" webkitdirectory multiple hidden>
+<input type="file" id="importInput" accept=".zip" hidden>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script type="module" src="/src/main.js"></script>
+
+</body>
+</html>

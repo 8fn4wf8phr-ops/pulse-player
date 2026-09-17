@@ -1,0 +1,20 @@
+{
+  "name": "pulse",
+  "private": true,
+  "version": "1.0.0",
+  "description": "A local-first music player with crossfade, an equalizer, mood theming, and a canvas-based audio visualizer.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@capacitor/core": "^8.5.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.2",
+    "@capacitor/ios": "^8.5.2",
+    "vite": "^8.3.0"
+  }
+}
