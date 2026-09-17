@@ -61,9 +61,24 @@ The full history of that progression — every step above as its own commit — 
 
 ```
 index.html    Everything — structure, styles, and script in one file
+ios-app/      A Capacitor-wrapped native iOS build of this same app
 ```
 
-Nothing else is needed: no build step, no dependencies to install. The only external resources are Google Fonts and the `jsmediatags` library, both loaded from a CDN.
+Nothing else is needed to run the web app: no build step, no dependencies to install. The only external resources are Google Fonts, `jsmediatags`, and `JSZip`, all loaded from a CDN.
+
+## iOS app
+
+`ios-app/` wraps this same app as a native iOS app with [Capacitor](https://capacitorjs.com/) — Vite bundles the code, and the iOS platform is added via Swift Package Manager (no CocoaPods needed). To build it:
+
+```bash
+cd ios-app
+npm install
+npm run build
+npx cap sync ios
+npx cap open ios
+```
+
+Then build and run from Xcode. A real device additionally needs a signing team set in the project's Signing & Capabilities tab; the Simulator doesn't.
 
 ## Running locally
 
