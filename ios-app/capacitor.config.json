@@ -1,5 +1,12 @@
 {
   "appId": "com.jacquezmonroe.pulse",
   "appName": "Pulse",
-  "webDir": "dist"
+  "webDir": "dist",
+  "server": {
+    "allowNavigation": [
+      "accounts.google.com",
+      "apis.google.com",
+      "www.googleapis.com"
+    ]
+  }
 }

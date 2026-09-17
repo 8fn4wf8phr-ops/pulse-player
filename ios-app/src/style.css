@@ -11,6 +11,7 @@
   }
 
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
 
   body {
     margin: 0;
@@ -176,6 +177,8 @@
   }
   .settings-inner {
     width: 100%;
+    height: 100%;
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: 20px;
@@ -207,6 +210,20 @@
   }
   .settings-toggle svg { width: 18px; height: 18px; }
   .settings-toggle.toggled { color: var(--accent); }
+
+  .settings-drive-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .settings-note {
+    margin: -8px 0 0;
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--text-dim);
+    min-height: 14px;
+  }
 
   .track-info {
     margin-top: 22px;

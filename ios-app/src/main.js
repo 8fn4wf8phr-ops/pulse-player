@@ -604,6 +604,8 @@
   const exportBtn = document.getElementById('exportBtn');
   const importBtn = document.getElementById('importBtn');
   const importInput = document.getElementById('importInput');
+  const driveImportBtn = document.getElementById('driveImportBtn');
+  const driveDisconnectBtn = document.getElementById('driveDisconnectBtn');
 
   function openLibrary() {
     closeSettings();
@@ -1017,6 +1019,171 @@
     }
   }
 
+  // ---------------------------------------------------------------------
+  // Google Drive import — a fully optional, opt-in extra alongside local
+  // files. Pulse's core pitch is local-only/no-accounts; this never runs
+  // unless the user explicitly clicks it, and nothing here is required
+  // for the rest of the app to work.
+  //
+  // REPLACE ME: fill in your own OAuth Client ID and API key from
+  // https://console.cloud.google.com before this feature will work.
+  // ---------------------------------------------------------------------
+  const GOOGLE_CLIENT_ID = 'REPLACE_ME.apps.googleusercontent.com';
+  const GOOGLE_API_KEY = 'REPLACE_ME';
+  const GOOGLE_DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.readonly';
+  const DRIVE_MIME_TYPES = 'audio/mpeg,audio/mp4,audio/x-m4a,audio/wav,audio/x-wav,audio/ogg,audio/flac,audio/aac,audio/webm';
+
+  let driveTokenClient = null;
+  let driveAccessToken = null;
+  let pickerApiLoaded = false;
+
+  function setDriveStatus(text) {
+    const el = document.getElementById('driveStatus');
+    if (el) el.textContent = text || '';
+  }
+
+  function updateDriveUI() {
+    const connected = !!driveAccessToken;
+    driveDisconnectBtn.hidden = !connected;
+    driveImportBtn.classList.toggle('toggled', connected);
+  }
+
+  // The GIS/gapi <script> tags load with defer, so on a slow connection
+  // they may not be ready the instant the button is clicked.
+  function ensureGoogleScriptsLoaded() {
+    if (window.google && window.google.accounts && window.gapi) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const check = setInterval(() => {
+        if (window.google && window.google.accounts && window.gapi) {
+          clearInterval(check);
+          resolve();
+        }
+      }, 100);
+      setTimeout(() => {
+        clearInterval(check);
+        reject(new Error('Google sign-in scripts failed to load'));
+      }, 10000);
+    });
+  }
+
+  function getDriveTokenClient() {
+    if (!driveTokenClient) {
+      driveTokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID,
+        scope: GOOGLE_DRIVE_SCOPE,
+        callback: () => {}, // replaced per-request in requestDriveToken()
+      });
+    }
+    return driveTokenClient;
+  }
+
+  // Requests an access token, triggering Google's sign-in/consent popup the
+  // first time (or whenever a previous token has expired/been revoked). A
+  // blocked or unsupported popup (a real risk in an embedded WebView) never
+  // calls back at all, so this times out instead of hanging forever.
+  function requestDriveToken() {
+    return new Promise((resolve, reject) => {
+      const client = getDriveTokenClient();
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        reject(new Error('sign-in timed out — the popup may have been blocked'));
+      }, 30000);
+      client.callback = (resp) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (resp.error) { reject(new Error(resp.error)); return; }
+        driveAccessToken = resp.access_token;
+        resolve(driveAccessToken);
+      };
+      client.requestAccessToken({ prompt: driveAccessToken ? '' : 'consent' });
+    });
+  }
+
+  function loadPickerApi() {
+    if (pickerApiLoaded) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      if (!window.gapi) { reject(new Error('Google API script not loaded')); return; }
+      gapi.load('picker', () => { pickerApiLoaded = true; resolve(); });
+    });
+  }
+
+  function openDrivePicker(token) {
+    return new Promise((resolve) => {
+      const view = new google.picker.DocsView(google.picker.ViewId.DOCS)
+        .setMimeTypes(DRIVE_MIME_TYPES)
+        .setIncludeFolders(false);
+      const picker = new google.picker.PickerBuilder()
+        .setOAuthToken(token)
+        .setDeveloperKey(GOOGLE_API_KEY)
+        .addView(view)
+        .setCallback((data) => {
+          if (data.action === google.picker.Action.PICKED) resolve(data.docs || []);
+          else if (data.action === google.picker.Action.CANCEL) resolve([]);
+        })
+        .build();
+      picker.setVisible(true);
+    });
+  }
+
+  async function downloadDriveFile(doc, token) {
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${doc.id}?alt=media`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Drive download failed (${res.status})`);
+    const blob = await res.blob();
+    const type = blob.type || doc.mimeType || 'audio/mpeg';
+    // Wrapped as a File so it flows through the exact same addFiles()
+    // pipeline as a locally-dropped file — same ID3 tag reading,
+    // dedupe, mood assignment, and IndexedDB persistence.
+    return new File([blob], doc.name, { type });
+  }
+
+  async function importFromDrive() {
+    try {
+      setDriveStatus('Connecting to Google Drive…');
+      await ensureGoogleScriptsLoaded();
+      const token = await requestDriveToken();
+      updateDriveUI();
+      await loadPickerApi();
+
+      setDriveStatus('');
+      const docs = await openDrivePicker(token);
+      if (!docs.length) return;
+
+      setDriveStatus(`Downloading ${docs.length} file${docs.length === 1 ? '' : 's'}…`);
+      const files = [];
+      for (const doc of docs) {
+        try {
+          files.push(await downloadDriveFile(doc, token));
+        } catch (err) {
+          console.warn('Pulse: failed to download a Drive file', doc.name, err);
+        }
+      }
+      if (!files.length) {
+        setDriveStatus('Could not download the selected file(s) — see console for details.');
+        return;
+      }
+      await addFiles(files);
+      setDriveStatus(`Imported ${files.length} track${files.length === 1 ? '' : 's'} from Drive.`);
+    } catch (err) {
+      console.warn('Pulse: Drive import failed', err);
+      const reason = (err && err.message) || 'see console for details';
+      setDriveStatus(`Drive import failed — ${reason}.`);
+    }
+  }
+
+  function disconnectDrive() {
+    if (driveAccessToken && window.google && google.accounts && google.accounts.oauth2) {
+      google.accounts.oauth2.revoke(driveAccessToken, () => {});
+    }
+    driveAccessToken = null;
+    updateDriveUI();
+    setDriveStatus('Disconnected from Google Drive.');
+  }
+
   function restoreSettings() {
     const savedVolume = localStorage.getItem('pulse:volume');
     if (savedVolume !== null) volumeSlider.value = savedVolume;
@@ -1076,6 +1243,9 @@
     if (importInput.files[0]) importLibrary(importInput.files[0]);
     importInput.value = '';
   });
+
+  driveImportBtn.addEventListener('click', () => importFromDrive());
+  driveDisconnectBtn.addEventListener('click', () => disconnectDrive());
 
   // Recursively walks dropped folders (Chrome/Edge/Firefox) via the
   // webkitGetAsEntry API; falls back to the flat file list elsewhere.
