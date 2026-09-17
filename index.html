@@ -121,22 +121,29 @@
 
   .lib-row {
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
-    background: none;
-    border: none;
+    align-items: stretch;
     border-radius: 10px;
-    padding: 9px 10px;
-    text-align: left;
-    cursor: pointer;
-    color: var(--text);
-    font: inherit;
     transition: background-color 0.6s ease;
   }
   .lib-row:hover { background: var(--surface-raised); }
   .lib-row.active { background: var(--accent-dim); }
   .lib-row.active .lib-row-title { color: var(--accent); transition: color 0.6s ease; }
+
+  .lib-row-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    background: none;
+    border: none;
+    padding: 9px 10px;
+    text-align: left;
+    cursor: pointer;
+    color: var(--text);
+    font: inherit;
+    min-width: 0;
+  }
 
   .lib-row-title {
     font-family: 'Space Grotesk', sans-serif;
@@ -148,6 +155,20 @@
     font-size: 11px;
     color: var(--text-dim);
   }
+
+  .lib-row-remove {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 15px;
+    line-height: 1;
+    padding: 0 12px;
+    display: flex;
+    align-items: center;
+  }
+  .lib-row-remove:hover { color: var(--accent); }
 
   .lib-empty {
     margin: auto;
@@ -395,7 +416,8 @@
   }
 
   .btn:focus-visible,
-  .lib-row:focus-visible,
+  .lib-row-main:focus-visible,
+  .lib-row-remove:focus-visible,
   input.volume:focus-visible,
   input.eq-slider:focus-visible,
   .progress-bar:focus-visible {
@@ -1196,9 +1218,12 @@
     }
 
     tracks.forEach((track, i) => {
-      const row = document.createElement('button');
-      row.type = 'button';
+      const row = document.createElement('div');
       row.className = 'lib-row' + (i === trackIndex ? ' active' : '');
+
+      const main = document.createElement('button');
+      main.type = 'button';
+      main.className = 'lib-row-main';
 
       const titleSpan = document.createElement('span');
       titleSpan.className = 'lib-row-title';
@@ -1208,14 +1233,61 @@
       artistSpan.className = 'lib-row-artist';
       artistSpan.textContent = track.artist;
 
-      row.appendChild(titleSpan);
-      row.appendChild(artistSpan);
-      row.addEventListener('click', () => {
+      main.appendChild(titleSpan);
+      main.appendChild(artistSpan);
+      main.addEventListener('click', () => {
         switchTrack(i, true);
         closeLibrary();
       });
+
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'lib-row-remove';
+      removeBtn.setAttribute('aria-label', `Remove ${track.title}`);
+      removeBtn.textContent = '×';
+      removeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        removeTrack(i);
+      });
+
+      row.appendChild(main);
+      row.appendChild(removeBtn);
       libraryList.appendChild(row);
     });
+  }
+
+  // Removes a track from the library, storage, and (if it's the one
+  // currently loaded) playback — reloading whatever now sits at that
+  // position, or clearing to the empty state if the library is empty.
+  async function removeTrack(index) {
+    if (index < 0 || index >= tracks.length) return;
+    const [removed] = tracks.splice(index, 1);
+    const wasActive = index === trackIndex;
+
+    knownFileKeys.delete(`${removed.name}:${removed.size}`);
+    if (removed.url) URL.revokeObjectURL(removed.url);
+
+    if (removed.id != null) {
+      dbDeleteTrack(removed.id).catch((err) => {
+        console.warn('Pulse: failed to delete track from storage', err);
+      });
+    }
+
+    if (!tracks.length) {
+      trackIndex = 0;
+      playOrder = [];
+      hardSwitch(0, false);
+      return;
+    }
+
+    trackIndex = index < trackIndex ? trackIndex - 1 : Math.min(trackIndex, tracks.length - 1);
+    rebuildOrder();
+
+    if (wasActive) {
+      hardSwitch(trackIndex, isPlaying);
+    } else {
+      renderLibrary();
+    }
   }
 
   const AUDIO_EXT_RE = /\.(mp3|m4a|wav|ogg|oga|flac|aac|weba)$/i;
@@ -1296,6 +1368,17 @@
     });
   }
 
+  async function dbDeleteTrack(id) {
+    const db = await getDB();
+    if (!db) return;
+    return new Promise((resolve, reject) => {
+      const store = db.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME);
+      const req = store.delete(id);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  }
+
   // Guards against re-adding the same file twice (e.g. dropping the same
   // folder again in a later session, once it's already persisted).
   const knownFileKeys = new Set();
@@ -1318,7 +1401,7 @@
       const artist = (tags && tags.artist) || fallback.artist;
 
       const mood = pickMood(title, artist);
-      const track = { id: null, title, artist, mood, url: URL.createObjectURL(file) };
+      const track = { id: null, title, artist, mood, name: file.name, size: file.size, url: URL.createObjectURL(file) };
       tracks.push(track);
       added = true;
       renderLibrary();
@@ -1349,7 +1432,7 @@
     records.forEach((rec) => {
       knownFileKeys.add(`${rec.name}:${rec.size}`);
       const mood = rec.mood || pickMood(rec.title, rec.artist);
-      tracks.push({ id: rec.id, title: rec.title, artist: rec.artist, mood, url: URL.createObjectURL(rec.data) });
+      tracks.push({ id: rec.id, title: rec.title, artist: rec.artist, mood, name: rec.name, size: rec.size, url: URL.createObjectURL(rec.data) });
     });
   }
 

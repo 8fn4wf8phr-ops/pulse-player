@@ -28,6 +28,8 @@ A music player web app built in vanilla HTML, CSS, and JavaScript — no framewo
 
 **10. Mood theming.** Each track now carries a mood — `chill`, `hype`, `focus`, `moody`, or `warm` — that recolors the whole player, not just the visualizer: the `--accent` and `--accent-dim` CSS variables update live, so the play button, progress bar, toggled icons, and library highlight all shift together over a soft 0.6s fade. Since the library is an open-ended set of user-imported files rather than a fixed track list, moods aren't hand-picked — they're derived deterministically from a hash of each track's title and artist, so the same track always lands on the same mood, and it's stored alongside the file so it survives a reload. The energy-reactive shift from the previous step now centers on the current track's mood hue instead of always starting from the original pink.
 
+**11. Removing a track.** The last piece the library panel was missing: a small `×` on every row that pulls that track from the library, storage, and — if it was the one loaded — playback, falling back to whatever's next or clearing to the empty state if it was the last one.
+
 The full history of that progression — every step above as its own commit — is in this repo's [commit log](../../commits/main).
 
 ## Design
@@ -45,7 +47,7 @@ The full history of that progression — every step above as its own commit — 
 - A 3-band equalizer (bass/mid/treble), applied live via Web Audio `BiquadFilterNode`s
 - Import songs by file picker, folder picker, or drag-and-drop (including whole folders)
 - Automatic title/artist from ID3 tags, with filename-based fallback parsing
-- A library panel to browse and jump to any imported track
+- A library panel to browse, jump to, or remove any imported track
 - Library, volume, playback, crossfade, and EQ settings persist across reloads (IndexedDB + `localStorage`)
 - A canvas-based circular visualizer (idle breathing state; 64 radial frequency bars + a bass-reactive pulsing core while playing), respecting `prefers-reduced-motion` — its color shifts from the accent pink toward warm orange as the music's overall energy rises
 - OS/browser media notifications and hardware media key support (Media Session API)
