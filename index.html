@@ -132,10 +132,11 @@
     cursor: pointer;
     color: var(--text);
     font: inherit;
+    transition: background-color 0.6s ease;
   }
   .lib-row:hover { background: var(--surface-raised); }
   .lib-row.active { background: var(--accent-dim); }
-  .lib-row.active .lib-row-title { color: var(--accent); }
+  .lib-row.active .lib-row-title { color: var(--accent); transition: color 0.6s ease; }
 
   .lib-row-title {
     font-family: 'Space Grotesk', sans-serif;
@@ -236,6 +237,7 @@
     width: 0%;
     background: var(--accent);
     border-radius: 999px;
+    transition: background-color 0.6s ease;
   }
 
   .progress-handle {
@@ -249,7 +251,7 @@
     left: 0%;
     box-shadow: 0 0 0 4px var(--accent-dim);
     opacity: 0;
-    transition: opacity 0.15s ease;
+    transition: opacity 0.15s ease, box-shadow 0.6s ease;
   }
 
   .progress-bar:hover .progress-handle { opacity: 1; }
@@ -302,11 +304,12 @@
     border-radius: 50%;
     background: var(--accent);
     color: var(--bg);
+    transition: color 0.15s ease, transform 0.1s ease, background-color 0.6s ease;
   }
   .btn.play:hover { color: var(--bg); filter: brightness(1.08); }
   .btn.play svg { width: 22px; height: 22px; }
 
-  .btn.toggled { color: var(--accent); }
+  .btn.toggled { color: var(--accent); transition: color 0.6s ease; }
 
   /* Volume */
   .volume-row {
@@ -343,6 +346,7 @@
     background: var(--text);
     cursor: pointer;
     box-shadow: 0 0 0 4px var(--accent-dim);
+    transition: box-shadow 0.6s ease;
   }
 
   input[type="range"].volume::-moz-range-thumb,
@@ -354,6 +358,7 @@
     background: var(--text);
     cursor: pointer;
     box-shadow: 0 0 0 4px var(--accent-dim);
+    transition: box-shadow 0.6s ease;
   }
 
   /* Drag-and-drop overlay, covers the viewport while files are dragged in */
@@ -545,13 +550,84 @@
   // every frame in drawActive() and used to drive the active-state color.
   let smoothedEnergy = 0;
 
+  // The hue energyColor() shifts away from as the music gets denser/louder —
+  // starts at the default accent's hue, then follows the current track's
+  // mood once one loads (see applyMoodTheme()).
+  let currentMoodHue = 340;
+
   function energyColor(energy, alpha) {
-    // Base hue starts near the current accent's hue, shifts warmer as energy rises
-    const baseHue = 340; // roughly matches the current pink/red accent (#FF5C7A)
-    const hue = baseHue - energy * 60; // shifts toward orange/yellow as energy increases
+    // Base hue starts at the current mood's hue, shifts warmer as energy rises
+    const hue = currentMoodHue - energy * 60; // shifts toward orange/yellow as energy increases
     const saturation = 70 + energy * 20;
     const lightness = 55 + energy * 10;
     return `hsla(${hue}, ${saturation}%, ${lightness}%, ${alpha})`;
+  }
+
+  // ---------------------------------------------------------------------
+  // Mood theming: each track carries a mood that recolors the whole
+  // player — not just the visualizer, but every CSS surface driven by
+  // --accent/--accent-dim (buttons, progress bar, toggled icons).
+  // ---------------------------------------------------------------------
+
+  const MOODS = ['chill', 'hype', 'focus', 'moody', 'warm'];
+  const moodPalettes = {
+    chill: { hue: 190, sat: 65, light: 55 }, // cool teal/blue
+    hype: { hue: 345, sat: 80, light: 58 }, // hot pink/red (close to the original default)
+    focus: { hue: 265, sat: 55, light: 60 }, // indigo/purple
+    moody: { hue: 225, sat: 45, light: 45 }, // deep blue-violet
+    warm: { hue: 30, sat: 75, light: 58 }, // amber/orange
+  };
+
+  // No mood metadata exists per song, and the library is an open-ended,
+  // user-imported set rather than a fixed track list — so instead of
+  // hand-picking a mood per title, every track gets one deterministically
+  // from a hash of its title+artist. Same track, same mood, every time.
+  function pickMood(title, artist) {
+    const str = `${artist}::${title}`;
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = (hash * 31 + str.charCodeAt(i)) >>> 0;
+    }
+    return MOODS[hash % MOODS.length];
+  }
+
+  function hslToRgb(h, s, l) {
+    h = ((h % 360) + 360) % 360;
+    s /= 100;
+    l /= 100;
+    const c = (1 - Math.abs(2 * l - 1)) * s;
+    const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+    const m = l - c / 2;
+    let r, g, b;
+    if (h < 60) [r, g, b] = [c, x, 0];
+    else if (h < 120) [r, g, b] = [x, c, 0];
+    else if (h < 180) [r, g, b] = [0, c, x];
+    else if (h < 240) [r, g, b] = [0, x, c];
+    else if (h < 300) [r, g, b] = [x, 0, c];
+    else [r, g, b] = [c, 0, x];
+    return {
+      r: Math.round((r + m) * 255),
+      g: Math.round((g + m) * 255),
+      b: Math.round((b + m) * 255),
+    };
+  }
+
+  function applyMoodTheme(mood) {
+    const palette = moodPalettes[mood] || moodPalettes.hype;
+    const rgb = hslToRgb(palette.hue, palette.sat, palette.light);
+
+    document.documentElement.style.setProperty('--accent', `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`);
+    document.documentElement.style.setProperty('--accent-dim', `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.18)`);
+
+    // accentAlpha() (used by drawIdle()) reads these fields live, so
+    // mutating them in place is enough — no need to touch drawIdle() itself.
+    accentRgb.r = rgb.r;
+    accentRgb.g = rgb.g;
+    accentRgb.b = rgb.b;
+
+    // energyColor()'s per-frame shift during playback now centers on this
+    // mood's hue instead of always starting from the original pink.
+    currentMoodHue = palette.hue;
   }
 
   function resizeCanvas() {
@@ -758,6 +834,7 @@
     document.getElementById('trackTitle').textContent = track.title;
     document.getElementById('trackArtist').textContent = track.artist;
     updateMediaSessionMetadata(track);
+    applyMoodTheme(track.mood);
   }
 
   function resetProgressUI() {
@@ -1240,12 +1317,13 @@
       const title = (tags && tags.title) || fallback.title;
       const artist = (tags && tags.artist) || fallback.artist;
 
-      const track = { id: null, title, artist, url: URL.createObjectURL(file) };
+      const mood = pickMood(title, artist);
+      const track = { id: null, title, artist, mood, url: URL.createObjectURL(file) };
       tracks.push(track);
       added = true;
       renderLibrary();
 
-      dbAddTrack({ title, artist, name: file.name, size: file.size, type: file.type, data: file })
+      dbAddTrack({ title, artist, mood, name: file.name, size: file.size, type: file.type, data: file })
         .then((id) => {
           track.id = id;
           if (id != null && tracks[trackIndex] === track) {
@@ -1270,7 +1348,8 @@
     }
     records.forEach((rec) => {
       knownFileKeys.add(`${rec.name}:${rec.size}`);
-      tracks.push({ id: rec.id, title: rec.title, artist: rec.artist, url: URL.createObjectURL(rec.data) });
+      const mood = rec.mood || pickMood(rec.title, rec.artist);
+      tracks.push({ id: rec.id, title: rec.title, artist: rec.artist, mood, url: URL.createObjectURL(rec.data) });
     });
   }
 

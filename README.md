@@ -26,11 +26,13 @@ A music player web app built in vanilla HTML, CSS, and JavaScript — no framewo
 
 **9. Energy-reactive visualizer color.** The radial bars and pulsing core always drew in the fixed pink accent color, at any energy level. Now, a smoothed read of the full frequency spectrum (an exponential moving average, so it eases rather than flickers) drives an HSL hue shift — calm passages stay close to the brand pink, louder/denser passages shift warmer toward orange. Only the active-playback state reacts this way; the idle breathing animation before playback starts still uses the fixed accent color.
 
+**10. Mood theming.** Each track now carries a mood — `chill`, `hype`, `focus`, `moody`, or `warm` — that recolors the whole player, not just the visualizer: the `--accent` and `--accent-dim` CSS variables update live, so the play button, progress bar, toggled icons, and library highlight all shift together over a soft 0.6s fade. Since the library is an open-ended set of user-imported files rather than a fixed track list, moods aren't hand-picked — they're derived deterministically from a hash of each track's title and artist, so the same track always lands on the same mood, and it's stored alongside the file so it survives a reload. The energy-reactive shift from the previous step now centers on the current track's mood hue instead of always starting from the original pink.
+
 The full history of that progression — every step above as its own commit — is in this repo's [commit log](../../commits/main).
 
 ## Design
 
-- **Colors** — background `#14121A`, card surface `#1E1B26`, accent `#FF5C7A` (coral-pink), text `#F2EFEA`.
+- **Colors** — background `#14121A`, card surface `#1E1B26`, text `#F2EFEA`. The accent defaults to `#FF5C7A` (coral-pink) but shifts per track via mood theming (see below).
 - **Type** — Space Grotesk for the track title, Inter for UI/labels, IBM Plex Mono for the time readout.
 - **Layout** — a single centered player card: album-art/visualizer → track info → progress bar → transport controls → volume slider, with a library bar and import controls above the art.
 
@@ -48,6 +50,7 @@ The full history of that progression — every step above as its own commit — 
 - A canvas-based circular visualizer (idle breathing state; 64 radial frequency bars + a bass-reactive pulsing core while playing), respecting `prefers-reduced-motion` — its color shifts from the accent pink toward warm orange as the music's overall energy rises
 - OS/browser media notifications and hardware media key support (Media Session API)
 - Keyboard shortcuts — space to play/pause, arrow keys to seek and adjust volume
+- Mood theming — each track recolors the whole player (accent color, not just the visualizer), derived deterministically per track and persisted with it
 
 ## Structure
 
