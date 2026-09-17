@@ -30,6 +30,8 @@ A music player web app built in vanilla HTML, CSS, and JavaScript — no framewo
 
 **11. Removing a track.** The last piece the library panel was missing: a small `×` on every row that pulls that track from the library, storage, and — if it was the one loaded — playback, falling back to whatever's next or clearing to the empty state if it was the last one.
 
+**12. Export and import.** The library is stuck in IndexedDB, in one browser, on one device — Export/Import in the settings panel move it between them as a single `.zip` file, built client-side with JSZip: every track's audio goes in under `audio/`, alongside a `metadata.json` listing title/artist/mood and the matching filename. Import reads that same structure back, skips anything already in the library (matched by title+artist), and writes the rest straight into IndexedDB. No server touches it either way.
+
 The full history of that progression — every step above as its own commit — is in this repo's [commit log](../../commits/main).
 
 ## Design
@@ -49,6 +51,7 @@ The full history of that progression — every step above as its own commit — 
 - Automatic title/artist from ID3 tags, with filename-based fallback parsing
 - A library panel to browse, jump to, or remove any imported track
 - Library, volume, playback, crossfade, and EQ settings persist across reloads (IndexedDB + `localStorage`)
+- Export/import the library as a `.zip` file to move it between browsers or devices
 - A canvas-based circular visualizer (idle breathing state; 64 radial frequency bars + a bass-reactive pulsing core while playing), respecting `prefers-reduced-motion` — its color shifts from the accent pink toward warm orange as the music's overall energy rises
 - OS/browser media notifications and hardware media key support (Media Session API)
 - Keyboard shortcuts — space to play/pause, arrow keys to seek and adjust volume
@@ -74,7 +77,7 @@ Then open `http://localhost:4173`.
 
 ## A note on persistence
 
-Imported songs are stored in the browser's IndexedDB, not uploaded anywhere — the library, and everything else that persists, is local to whichever browser and device you imported them in.
+Imported songs are stored in the browser's IndexedDB, not uploaded anywhere — the library, and everything else that persists, is local to whichever browser and device you imported them in. To move a library to another browser or device, use Export/Import in the settings panel — it packages everything into a single `.zip` file you carry over manually; nothing here ever leaves your machine on its own.
 
 ## Deploying
 

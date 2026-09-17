@@ -477,6 +477,20 @@
           <span class="settings-label">Treble</span>
           <input type="range" class="eq-slider" id="eqTreble" min="-12" max="12" step="1" value="0" aria-label="Treble">
         </div>
+
+        <p class="settings-heading">Library</p>
+        <div class="settings-row">
+          <span class="settings-label">Export</span>
+          <button class="btn settings-toggle" id="exportBtn" aria-label="Export library as a zip file" title="Export library">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          </button>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label">Import</span>
+          <button class="btn settings-toggle" id="importBtn" aria-label="Import library from a zip file" title="Import library">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -537,8 +551,10 @@
 <audio id="audioB"></audio>
 <input type="file" id="fileInput" accept="audio/*,.mp3,.m4a,.wav,.ogg,.flac,.aac" multiple hidden>
 <input type="file" id="folderInput" webkitdirectory multiple hidden>
+<input type="file" id="importInput" accept=".zip" hidden>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
   const audioA = document.getElementById('audioA');
   const audioB = document.getElementById('audioB');
@@ -1143,6 +1159,9 @@
   const dropOverlay = document.getElementById('dropOverlay');
   const settingsBtn = document.getElementById('settingsBtn');
   const settingsPanel = document.getElementById('settingsPanel');
+  const exportBtn = document.getElementById('exportBtn');
+  const importBtn = document.getElementById('importBtn');
+  const importInput = document.getElementById('importInput');
 
   function openLibrary() {
     closeSettings();
@@ -1436,6 +1455,126 @@
     });
   }
 
+  // ---------------------------------------------------------------------
+  // Export / import: move the library between browsers or devices as a
+  // single .zip file — everything stays client-side, no server involved.
+  // ---------------------------------------------------------------------
+
+  const EXT_FOR_TYPE = {
+    'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/wav': 'wav', 'audio/x-wav': 'wav',
+    'audio/ogg': 'ogg', 'audio/flac': 'flac', 'audio/x-flac': 'flac', 'audio/aac': 'aac',
+    'audio/mp4': 'm4a', 'audio/x-m4a': 'm4a', 'audio/webm': 'weba',
+  };
+  function extForType(type) { return EXT_FOR_TYPE[type] || 'mp3'; }
+
+  function sanitizeForFilename(str) {
+    return (str || 'track').replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '') || 'track';
+  }
+
+  // Briefly swaps a settings-panel button to a checkmark to confirm an
+  // export/import finished, matching the existing toggle-button color
+  // language rather than adding new text elements to an icon-only button.
+  function flashSuccess(btn) {
+    const original = btn.innerHTML;
+    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+    btn.classList.add('toggled');
+    btn.disabled = true;
+    setTimeout(() => {
+      btn.innerHTML = original;
+      btn.classList.remove('toggled');
+      btn.disabled = false;
+    }, 1600);
+  }
+
+  async function buildLibraryZip() {
+    const records = await dbGetAllTracks();
+    if (!records.length) return null;
+
+    const zip = new JSZip();
+    const metadata = records.map((rec) => {
+      const filename = `${rec.id}-${sanitizeForFilename(rec.title)}.${extForType(rec.type)}`;
+      zip.file(`audio/${filename}`, rec.data);
+      return { id: rec.id, title: rec.title, artist: rec.artist, mood: rec.mood, type: rec.type, filename };
+    });
+    zip.file('metadata.json', JSON.stringify(metadata, null, 2));
+    return zip.generateAsync({ type: 'blob' });
+  }
+
+  async function exportLibrary() {
+    try {
+      const blob = await buildLibraryZip();
+      if (!blob) {
+        alert('No local tracks to export yet.');
+        return;
+      }
+      const date = new Date().toISOString().slice(0, 10);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `pulse-library-${date}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      flashSuccess(exportBtn);
+    } catch (err) {
+      console.warn('Pulse: export failed', err);
+      alert('Export failed — see the console for details.');
+    }
+  }
+
+  async function importLibrary(file) {
+    try {
+      const zip = await JSZip.loadAsync(file);
+      const metaEntry = zip.file('metadata.json');
+      if (!metaEntry) throw new Error('metadata.json not found in zip');
+      const metadata = JSON.parse(await metaEntry.async('string'));
+
+      const wasEmpty = tracks.length === 0;
+      let importedCount = 0;
+
+      for (const entry of metadata) {
+        const alreadyExists = tracks.some((t) => t.title === entry.title && t.artist === entry.artist);
+        if (alreadyExists) continue;
+
+        const zipEntry = zip.file(`audio/${entry.filename}`);
+        if (!zipEntry) continue;
+
+        const rawBlob = await zipEntry.async('blob');
+        const type = entry.type || 'audio/mpeg';
+        const blob = new Blob([rawBlob], { type });
+        const mood = entry.mood || pickMood(entry.title, entry.artist);
+
+        const id = await dbAddTrack({
+          title: entry.title,
+          artist: entry.artist,
+          mood,
+          name: entry.filename,
+          size: blob.size,
+          type,
+          data: blob,
+        });
+
+        knownFileKeys.add(`${entry.filename}:${blob.size}`);
+        tracks.push({ id, title: entry.title, artist: entry.artist, mood, name: entry.filename, size: blob.size, url: URL.createObjectURL(blob) });
+        importedCount++;
+      }
+
+      if (!importedCount) {
+        alert('Nothing new to import — those tracks are already in your library.');
+        return;
+      }
+
+      rebuildOrder();
+      renderLibrary();
+      if (wasEmpty) hardSwitch(0, false);
+      flashSuccess(importBtn);
+    } catch (err) {
+      console.warn('Pulse: import failed', err);
+      alert('Import failed — that file may not be a valid Pulse library export.');
+    }
+  }
+
   function restoreSettings() {
     const savedVolume = localStorage.getItem('pulse:volume');
     if (savedVolume !== null) volumeSlider.value = savedVolume;
@@ -1487,6 +1626,13 @@
   folderInput.addEventListener('change', () => {
     addFiles(folderInput.files);
     folderInput.value = '';
+  });
+
+  exportBtn.addEventListener('click', () => exportLibrary());
+  importBtn.addEventListener('click', () => importInput.click());
+  importInput.addEventListener('change', () => {
+    if (importInput.files[0]) importLibrary(importInput.files[0]);
+    importInput.value = '';
   });
 
   // Recursively walks dropped folders (Chrome/Edge/Firefox) via the
