@@ -24,6 +24,8 @@ A music player web app built in vanilla HTML, CSS, and JavaScript — no framewo
 
 **8. Media Session and keyboard shortcuts.** Two smaller finishing touches: the Media Session API now reports track metadata and playback state to the OS, so lock-screen and hardware media keys (play/pause, next/previous, scrubbing) work like a native app; and a global keyboard layer adds space to play/pause and arrow keys for seek/volume, stepping aside whenever a form control already has focus so it doesn't fight with native slider behavior.
 
+**9. Energy-reactive visualizer color.** The radial bars and pulsing core always drew in the fixed pink accent color, at any energy level. Now, a smoothed read of the full frequency spectrum (an exponential moving average, so it eases rather than flickers) drives an HSL hue shift — calm passages stay close to the brand pink, louder/denser passages shift warmer toward orange. Only the active-playback state reacts this way; the idle breathing animation before playback starts still uses the fixed accent color.
+
 The full history of that progression — every step above as its own commit — is in this repo's [commit log](../../commits/main).
 
 ## Design
@@ -43,7 +45,7 @@ The full history of that progression — every step above as its own commit — 
 - Automatic title/artist from ID3 tags, with filename-based fallback parsing
 - A library panel to browse and jump to any imported track
 - Library, volume, playback, crossfade, and EQ settings persist across reloads (IndexedDB + `localStorage`)
-- A canvas-based circular visualizer (idle breathing state; 64 radial frequency bars + a bass-reactive pulsing core while playing), respecting `prefers-reduced-motion`
+- A canvas-based circular visualizer (idle breathing state; 64 radial frequency bars + a bass-reactive pulsing core while playing), respecting `prefers-reduced-motion` — its color shifts from the accent pink toward warm orange as the music's overall energy rises
 - OS/browser media notifications and hardware media key support (Media Session API)
 - Keyboard shortcuts — space to play/pause, arrow keys to seek and adjust volume
 

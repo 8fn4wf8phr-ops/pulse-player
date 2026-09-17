@@ -541,6 +541,19 @@
   const accentRgb = hexToRgb(accentColor);
   function accentAlpha(a) { return `rgba(${accentRgb.r}, ${accentRgb.g}, ${accentRgb.b}, ${a})`; }
 
+  // Smoothed 0-1 read of overall loudness across the full spectrum, updated
+  // every frame in drawActive() and used to drive the active-state color.
+  let smoothedEnergy = 0;
+
+  function energyColor(energy, alpha) {
+    // Base hue starts near the current accent's hue, shifts warmer as energy rises
+    const baseHue = 340; // roughly matches the current pink/red accent (#FF5C7A)
+    const hue = baseHue - energy * 60; // shifts toward orange/yellow as energy increases
+    const saturation = 70 + energy * 20;
+    const lightness = 55 + energy * 10;
+    return `hsla(${hue}, ${saturation}%, ${lightness}%, ${alpha})`;
+  }
+
   function resizeCanvas() {
     const size = artEl.clientWidth;
     const dpr = window.devicePixelRatio || 1;
@@ -621,17 +634,26 @@
 
     canvasCtx.clearRect(0, 0, size, size);
 
-    // Bass-driven pulsing core (average of the lowest few bins)
+    // Bass-driven pulsing core (average of the lowest few bins) — stays
+    // bass-only; it's the overall spectrum average below that drives color.
     const bassBins = 4;
     let bassSum = 0;
     for (let i = 0; i < bassBins; i++) bassSum += dataArray[i];
     const bassAvg = bassSum / bassBins / 255;
     const coreR = size * 0.14 * (1 + bassAvg * 0.5);
 
+    // Full-spectrum loudness, smoothed with an exponential moving average
+    // (90% previous frame / 10% new sample) so the color eases rather than
+    // flickering frame to frame.
+    let spectrumSum = 0;
+    for (let i = 0; i < bufferLength; i++) spectrumSum += dataArray[i];
+    const rawEnergy = spectrumSum / bufferLength / 255;
+    smoothedEnergy = smoothedEnergy * 0.9 + rawEnergy * 0.1;
+
     canvasCtx.beginPath();
     canvasCtx.arc(cx, cy, coreR, 0, Math.PI * 2);
-    canvasCtx.fillStyle = accentAlpha(0.25 + bassAvg * 0.25);
-    canvasCtx.shadowColor = accentAlpha(0.5);
+    canvasCtx.fillStyle = energyColor(smoothedEnergy, 0.25 + bassAvg * 0.25);
+    canvasCtx.shadowColor = energyColor(smoothedEnergy, 0.5);
     canvasCtx.shadowBlur = size * 0.06 * (0.5 + bassAvg);
     canvasCtx.fill();
     canvasCtx.shadowBlur = 0;
@@ -654,7 +676,7 @@
       const x2 = cx + Math.cos(angle) * (baseRadius + barLen);
       const y2 = cy + Math.sin(angle) * (baseRadius + barLen);
 
-      canvasCtx.strokeStyle = accentAlpha(0.35 + value * 0.65);
+      canvasCtx.strokeStyle = energyColor(smoothedEnergy, 0.35 + value * 0.65);
       canvasCtx.beginPath();
       canvasCtx.moveTo(x1, y1);
       canvasCtx.lineTo(x2, y2);
