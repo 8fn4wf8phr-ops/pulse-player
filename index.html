@@ -725,9 +725,17 @@
     switchTrack(playOrder[orderPos], autoplay);
   }
 
+  function updateMediaSessionMetadata(track) {
+    if (!('mediaSession' in navigator)) return;
+    navigator.mediaSession.metadata = track
+      ? new MediaMetadata({ title: track.title, artist: track.artist })
+      : null;
+  }
+
   function setNowPlayingUI(track) {
     document.getElementById('trackTitle').textContent = track.title;
     document.getElementById('trackArtist').textContent = track.artist;
+    updateMediaSessionMetadata(track);
   }
 
   function resetProgressUI() {
@@ -746,6 +754,7 @@
       activeEl().removeAttribute('src');
       document.getElementById('trackTitle').textContent = '—';
       document.getElementById('trackArtist').textContent = 'Add a track to get started';
+      updateMediaSessionMetadata(null);
       resetProgressUI();
       renderLibrary();
       return;
@@ -833,6 +842,9 @@
     playIcon.style.display = playing ? 'none' : 'block';
     pauseIcon.style.display = playing ? 'block' : 'none';
     playBtn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+    if ('mediaSession' in navigator) {
+      navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';
+    }
   }
 
   playBtn.addEventListener('click', () => {
@@ -854,6 +866,12 @@
     progressHandle.style.left = pct + '%';
     progressBar.setAttribute('aria-valuenow', Math.round(pct));
     currentTimeEl.textContent = formatTime(el.currentTime);
+
+    if ('mediaSession' in navigator && navigator.mediaSession.setPositionState && el.duration) {
+      try {
+        navigator.mediaSession.setPositionState({ duration: el.duration, playbackRate: el.playbackRate, position: el.currentTime });
+      } catch (err) { /* ignore unsupported position state */ }
+    }
 
     const remaining = el.duration - el.currentTime;
     if (
@@ -890,6 +908,22 @@
     el.addEventListener('ended', () => handleEnded(el));
   });
 
+  // Lets the OS/browser media notification show track info and respond to
+  // hardware media keys (headphones, lock screen, etc).
+  if ('mediaSession' in navigator) {
+    const setHandler = (action, handler) => {
+      try { navigator.mediaSession.setActionHandler(action, handler); } catch (err) { /* unsupported action */ }
+    };
+    setHandler('play', () => playBtn.click());
+    setHandler('pause', () => playBtn.click());
+    setHandler('previoustrack', () => prevBtn.click());
+    setHandler('nexttrack', () => nextBtn.click());
+    setHandler('seekto', (details) => {
+      const el = activeEl();
+      if (details.seekTime != null && el.duration) el.currentTime = details.seekTime;
+    });
+  }
+
   function seekToClientX(clientX) {
     const el = activeEl();
     const rect = progressBar.getBoundingClientRect();
@@ -912,12 +946,6 @@
     if (isSeeking) seekToClientX(e.clientX);
   });
   progressBar.addEventListener('pointerup', () => { isSeeking = false; });
-  progressBar.addEventListener('keydown', (e) => {
-    const el = activeEl();
-    if (!el.duration) return;
-    if (e.key === 'ArrowRight') el.currentTime = Math.min(el.duration, el.currentTime + 5);
-    if (e.key === 'ArrowLeft') el.currentTime = Math.max(0, el.currentTime - 5);
-  });
 
   function applyVolume() {
     const v = volumeSlider.value / 100;
@@ -1021,8 +1049,39 @@
     if (settingsPanel.classList.contains('open')) closeSettings(); else openSettings();
   });
 
+  // Global shortcuts: space to play/pause, left/right to seek, up/down for
+  // volume. Skipped while a form control has focus so native behavior
+  // (e.g. arrow keys on a focused range slider) isn't double-handled.
+  function isTypingTarget(el) {
+    if (!el) return false;
+    const tag = el.tagName;
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'BUTTON' || tag === 'A' || el.isContentEditable;
+  }
+
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { closeLibrary(); closeSettings(); }
+    if (e.key === 'Escape') { closeLibrary(); closeSettings(); return; }
+    if (isTypingTarget(document.activeElement)) return;
+
+    if (e.key === ' ' || e.code === 'Space') {
+      e.preventDefault();
+      playBtn.click();
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      const el = activeEl();
+      if (el.duration) el.currentTime = Math.min(el.duration, el.currentTime + 5);
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      const el = activeEl();
+      if (el.duration) el.currentTime = Math.max(0, el.currentTime - 5);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      volumeSlider.value = Math.min(100, Number(volumeSlider.value) + 5);
+      volumeSlider.dispatchEvent(new Event('input'));
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      volumeSlider.value = Math.max(0, Number(volumeSlider.value) - 5);
+      volumeSlider.dispatchEvent(new Event('input'));
+    }
   });
 
   function renderLibrary() {

@@ -22,6 +22,8 @@ A music player web app built in vanilla HTML, CSS, and JavaScript — no framewo
 
 **7. Crossfade and an equalizer.** Switching tracks used to be a hard cut — one `<audio>` element, swap the `src`, done. Crossfade needed two, so the player now runs two audio elements at once, each through its own bass/mid/treble `BiquadFilterNode` chain and gain node, both feeding one shared analyser. Crossfading ramps one element's gain down and the other's up over four seconds — triggered automatically near the end of a track, or on a manual skip — while the equalizer sliders adjust both chains identically so the incoming track already sounds right before it's audible. Both live in a new settings panel, opened from a gear icon next to the library button.
 
+**8. Media Session and keyboard shortcuts.** Two smaller finishing touches: the Media Session API now reports track metadata and playback state to the OS, so lock-screen and hardware media keys (play/pause, next/previous, scrubbing) work like a native app; and a global keyboard layer adds space to play/pause and arrow keys for seek/volume, stepping aside whenever a form control already has focus so it doesn't fight with native slider behavior.
+
 The full history of that progression — every step above as its own commit — is in this repo's [commit log](../../commits/main).
 
 ## Design
@@ -42,6 +44,8 @@ The full history of that progression — every step above as its own commit — 
 - A library panel to browse and jump to any imported track
 - Library, volume, playback, crossfade, and EQ settings persist across reloads (IndexedDB + `localStorage`)
 - A canvas-based circular visualizer (idle breathing state; 64 radial frequency bars + a bass-reactive pulsing core while playing), respecting `prefers-reduced-motion`
+- OS/browser media notifications and hardware media key support (Media Session API)
+- Keyboard shortcuts — space to play/pause, arrow keys to seek and adjust volume
 
 ## Structure
 
