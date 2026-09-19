@@ -606,6 +606,8 @@
   const importInput = document.getElementById('importInput');
   const driveImportBtn = document.getElementById('driveImportBtn');
   const driveDisconnectBtn = document.getElementById('driveDisconnectBtn');
+  const convertVideoBtn = document.getElementById('convertVideoBtn');
+  const videoInput = document.getElementById('videoInput');
 
   function openLibrary() {
     closeSettings();
@@ -1028,8 +1030,8 @@
   // REPLACE ME: fill in your own OAuth Client ID and API key from
   // https://console.cloud.google.com before this feature will work.
   // ---------------------------------------------------------------------
-  const GOOGLE_CLIENT_ID = 'REPLACE_ME.apps.googleusercontent.com';
-  const GOOGLE_API_KEY = 'REPLACE_ME';
+  const GOOGLE_CLIENT_ID = '348004527336-88msbtqo2q82ok5608cg79m7lco5i445.apps.googleusercontent.com';
+  const GOOGLE_API_KEY = 'AIzaSyAugbTHLIgO10wVGMdl6bes7ngxbM2Yoeg';
   const GOOGLE_DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.readonly';
   const DRIVE_MIME_TYPES = 'audio/mpeg,audio/mp4,audio/x-m4a,audio/wav,audio/x-wav,audio/ogg,audio/flac,audio/aac,audio/webm';
 
@@ -1184,6 +1186,157 @@
     setDriveStatus('Disconnected from Google Drive.');
   }
 
+  // ---------------------------------------------------------------------
+  // Video-to-MP3 conversion — another fully optional, opt-in extra.
+  // Runs entirely client-side via ffmpeg.wasm, loaded from a CDN as an
+  // ES module (no bundler needed here, and the exact same dynamic
+  // import() works unchanged in the Vite-bundled iOS copy).
+  //
+  // Deliberately the single-threaded @ffmpeg/core, not @ffmpeg/core-mt:
+  // the multi-threaded core needs SharedArrayBuffer, which needs
+  // Cross-Origin-Embedder-Policy/Cross-Origin-Opener-Policy response
+  // headers that a Capacitor-served iOS WebView can't reliably provide,
+  // and iOS Safari doesn't support SharedArrayBuffer in Web Workers at
+  // all. Single-threaded is slower but needs zero special headers.
+  // ---------------------------------------------------------------------
+
+  const FFMPEG_CORE_VERSION = '0.12.10';
+  // The ESM build specifically — our worker is type:"module" (required
+  // for it to use dynamic import() at all, since importScripts() throws
+  // in a module worker), and only the ESM core actually exports a
+  // default createFFmpegCore for that import() to receive. The UMD
+  // build has no export at all and silently yields undefined here.
+  const FFMPEG_CORE_BASE_URL = `https://cdn.jsdelivr.net/npm/@ffmpeg/core@${FFMPEG_CORE_VERSION}/dist/esm`;
+
+  let ffmpegInstance = null;
+  let ffmpegLoadPromise = null;
+  let ffmpegUtilModule = null;
+
+  function setConvertStatus(text) {
+    const el = document.getElementById('convertStatus');
+    if (el) el.textContent = text || '';
+  }
+
+  // The ffmpeg.wasm *wrapper* (not the big core binary) is vendored
+  // locally in vendor/ — it needs a same-origin Worker script, and
+  // blob-ifying a CDN-hosted worker.js (the usual cross-origin
+  // workaround) breaks that script's own relative imports, since a
+  // blob: URL can't be used as a base for resolving them.
+  //
+  // Resolved against document.baseURI (the page's own URL), not a bare
+  // relative path: this code ends up inside a bundled main.js in the
+  // iOS build, served from a different location (dist/assets/) than
+  // vendor/ (dist/vendor/) — a plain "./vendor/..." would resolve
+  // relative to the bundle, landing in the wrong place.
+  function vendorURL(path) {
+    return new URL(`vendor/${path}`, document.baseURI).href;
+  }
+
+  function getFFmpegUtil() {
+    if (!ffmpegUtilModule) ffmpegUtilModule = import(vendorURL('ffmpeg-util/index.js'));
+    return ffmpegUtilModule;
+  }
+
+  // Loads the ffmpeg.wasm JS API and the (single-threaded) core lazily —
+  // only when this feature is first used, not on every page load, since
+  // the core alone is a ~22MB download.
+  async function getFFmpeg() {
+    if (ffmpegInstance) return ffmpegInstance;
+    if (!ffmpegLoadPromise) {
+      ffmpegLoadPromise = (async () => {
+        const [{ FFmpeg }, { toBlobURL }] = await Promise.all([
+          import(vendorURL('ffmpeg/classes.js')),
+          getFFmpegUtil(),
+        ]);
+        const ffmpeg = new FFmpeg();
+        ffmpeg.on('progress', ({ progress }) => {
+          if (currentConvertFilename) {
+            setConvertStatus(`Converting ${currentConvertFilename}… ${Math.round(Math.min(1, Math.max(0, progress)) * 100)}%`);
+          }
+        });
+        // The core binary has no imports of its own, so blob-ifying it
+        // (the standard CDN-loading pattern) is safe — only the small
+        // ESM wrapper files needed vendoring. classWorkerURL is just
+        // "worker.js": classes.js resolves it relative to its own
+        // (local, same-origin) URL, landing on its sibling in vendor/ffmpeg/.
+        await ffmpeg.load({
+          coreURL: await toBlobURL(`${FFMPEG_CORE_BASE_URL}/ffmpeg-core.js`, 'text/javascript'),
+          wasmURL: await toBlobURL(`${FFMPEG_CORE_BASE_URL}/ffmpeg-core.wasm`, 'application/wasm'),
+          classWorkerURL: 'worker.js',
+        });
+        ffmpegInstance = ffmpeg;
+        return ffmpeg;
+      })();
+    }
+    return ffmpegLoadPromise;
+  }
+
+  const VIDEO_EXT_RE = /\.(mov|mp4|m4v|avi|webm|mkv)$/i;
+  function isVideoFile(file) {
+    return (file.type && file.type.startsWith('video/')) || VIDEO_EXT_RE.test(file.name);
+  }
+
+  let currentConvertFilename = null;
+
+  // Extracts and compresses just the audio track — no video processing,
+  // to keep this as fast as the single-threaded core allows.
+  async function convertVideoToMp3(file) {
+    const { fetchFile } = await getFFmpegUtil();
+    const ffmpeg = await getFFmpeg();
+
+    const ext = (file.name.split('.').pop() || 'mp4').toLowerCase();
+    const inputName = `input.${ext}`;
+    const outputName = 'output.mp3';
+
+    await ffmpeg.writeFile(inputName, await fetchFile(file));
+    try {
+      await ffmpeg.exec(['-i', inputName, '-vn', '-acodec', 'libmp3lame', '-b:a', '128k', outputName]);
+      const data = await ffmpeg.readFile(outputName);
+      return new Blob([data], { type: 'audio/mpeg' });
+    } finally {
+      await ffmpeg.deleteFile(inputName).catch(() => {});
+      await ffmpeg.deleteFile(outputName).catch(() => {});
+    }
+  }
+
+  // Processes one file at a time — ffmpeg.wasm handles one job per
+  // instance, and this also lets the status line show clear progress
+  // per file instead of several conversions racing each other.
+  async function convertVideosToLibrary(files) {
+    const videos = Array.from(files || []).filter(isVideoFile);
+    if (!videos.length) return;
+
+    try {
+      setConvertStatus('Loading the converter (first use only, ~32MB)…');
+      await getFFmpeg();
+    } catch (err) {
+      console.warn('Pulse: failed to load ffmpeg.wasm', err);
+      setConvertStatus('Could not load the video converter — check your connection and try again.');
+      return;
+    }
+
+    let converted = 0;
+    for (const file of videos) {
+      currentConvertFilename = file.name;
+      setConvertStatus(`Converting ${file.name}…`);
+      try {
+        const blob = await convertVideoToMp3(file);
+        const baseName = file.name.replace(/\.[^/.]+$/, '');
+        const mp3File = new File([blob], `${baseName}.mp3`, { type: 'audio/mpeg' });
+        await addFiles([mp3File]);
+        converted++;
+      } catch (err) {
+        console.warn('Pulse: video conversion failed', file.name, err);
+        setConvertStatus(`Couldn't convert ${file.name} — it may have no audio track, or be an unsupported format.`);
+      }
+    }
+    currentConvertFilename = null;
+
+    if (converted) {
+      setConvertStatus(`Converted ${converted} video${converted === 1 ? '' : 's'} to MP3.`);
+    }
+  }
+
   function restoreSettings() {
     const savedVolume = localStorage.getItem('pulse:volume');
     if (savedVolume !== null) volumeSlider.value = savedVolume;
@@ -1247,6 +1400,12 @@
   driveImportBtn.addEventListener('click', () => importFromDrive());
   driveDisconnectBtn.addEventListener('click', () => disconnectDrive());
 
+  convertVideoBtn.addEventListener('click', () => videoInput.click());
+  videoInput.addEventListener('change', () => {
+    convertVideosToLibrary(videoInput.files);
+    videoInput.value = '';
+  });
+
   // Recursively walks dropped folders (Chrome/Edge/Firefox) via the
   // webkitGetAsEntry API; falls back to the flat file list elsewhere.
   async function collectFilesFromDataTransfer(dataTransfer) {
@@ -1305,7 +1464,10 @@
     dragDepth = 0;
     dropOverlay.classList.remove('active');
     const files = await collectFilesFromDataTransfer(e.dataTransfer);
-    addFiles(files);
+    const videos = files.filter(isVideoFile);
+    const rest = files.filter((f) => !isVideoFile(f));
+    addFiles(rest);
+    if (videos.length) convertVideosToLibrary(videos);
   });
 
   init();

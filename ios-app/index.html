@@ -89,6 +89,15 @@
           </div>
         </div>
         <p class="settings-note" id="driveStatus"></p>
+
+        <p class="settings-heading">Video import (optional)</p>
+        <div class="settings-row">
+          <span class="settings-label">Convert</span>
+          <button class="btn settings-toggle" id="convertVideoBtn" aria-label="Convert a video's audio to MP3" title="Convert video to MP3">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2"></rect></svg>
+          </button>
+        </div>
+        <p class="settings-note" id="convertStatus"></p>
       </div>
     </div>
   </div>
@@ -141,7 +150,7 @@
 <div class="dropzone-overlay" id="dropOverlay">
   <div class="dropzone-inner">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-    <p>Drop mp3s or a folder to add them</p>
+    <p>Drop mp3s, a folder, or a video to add them</p>
   </div>
 </div>
 
@@ -150,6 +159,7 @@
 <input type="file" id="fileInput" accept="audio/*,.mp3,.m4a,.wav,.ogg,.flac,.aac" multiple hidden>
 <input type="file" id="folderInput" webkitdirectory multiple hidden>
 <input type="file" id="importInput" accept=".zip" hidden>
+<input type="file" id="videoInput" accept="video/*" multiple hidden>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
