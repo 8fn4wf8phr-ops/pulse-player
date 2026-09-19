@@ -4,7 +4,7 @@ A music player web app built in vanilla HTML, CSS, and JavaScript — no framewo
 
 ## Live site
 
-**Coming soon — deploying now.**
+**[pulse-player-eight.vercel.app](https://pulse-player-eight.vercel.app)**
 
 ## The journey
 
@@ -32,6 +32,14 @@ A music player web app built in vanilla HTML, CSS, and JavaScript — no framewo
 
 **12. Export and import.** The library is stuck in IndexedDB, in one browser, on one device — Export/Import in the settings panel move it between them as a single `.zip` file, built client-side with JSZip: every track's audio goes in under `audio/`, alongside a `metadata.json` listing title/artist/mood and the matching filename. Import reads that same structure back, skips anything already in the library (matched by title+artist), and writes the rest straight into IndexedDB. No server touches it either way.
 
+**13. A native iOS app.** The web app already works fine in mobile Safari, but a from-the-home-screen app feels different — a real icon, no browser chrome, actual backgrounding. `ios-app/` wraps the same interface as a native iOS app via [Capacitor](https://capacitorjs.com/): Vite bundles the code, and the iOS platform is added via Swift Package Manager rather than CocoaPods, so there's no separate CocoaPods toolchain to install. It's a separate copy of the same HTML/CSS/JS, kept in step with the root `index.html` by hand as features are added.
+
+**14. Optional Google Drive import.** Local files and Drive files are different enough — Drive's own auth, its own picker UI — that this stays a clearly separate, opt-in path rather than folded into the regular file picker. Sign-in uses Google Identity Services' token-based OAuth flow, and the Google Picker API lets you browse and select audio files straight from Drive; picked files are fetched and added through the same import pipeline as local ones, and nothing about the local-only experience changes if this is never touched.
+
+**15. Video-to-MP3 conversion.** Some of what ends up in a music library started life as a screen recording — a voice memo captured as video, a clip with a song playing in the background. Drop a video file and [`ffmpeg.wasm`](https://ffmpegwasm.netlify.app/) extracts and compresses its audio to MP3 entirely client-side, then feeds it into the same import pipeline as everything else. It runs ffmpeg's single-threaded core specifically, not the faster multi-threaded build — that one needs `SharedArrayBuffer` and cross-origin-isolation headers that iOS Safari (and the Capacitor app's WebView) don't reliably support, so single-threaded is the version that actually works everywhere the rest of the app does.
+
+**16. Sync with a code.** Moving a library between devices used to mean exporting a `.zip` and manually carrying it over. Sync adds a faster path: generate a short code on one device, and it encrypts the library client-side and uploads it to temporary storage; entering that same code on another device downloads and decrypts it there. The server only ever sees a hash of the code — never the code itself, the encryption key, or the plaintext — and the upload is single-use and deleted after the first successful claim, or after 24 hours either way. It's relay-only for now; a faster direct device-to-device path (WebRTC, no server relay) may come later for when both devices happen to be online at the same time.
+
 The full history of that progression — every step above as its own commit — is in this repo's [commit log](../../commits/main).
 
 ## Design
@@ -52,6 +60,9 @@ The full history of that progression — every step above as its own commit — 
 - A library panel to browse, jump to, or remove any imported track
 - Library, volume, playback, crossfade, and EQ settings persist across reloads (IndexedDB + `localStorage`)
 - Export/import the library as a `.zip` file to move it between browsers or devices
+- Sync a library between devices with a short one-time code — encrypted client-side, relay-only, no account
+- Optional Google Drive import, alongside local file/folder import
+- Convert a screen-recorded video's audio to MP3 for import, entirely client-side via `ffmpeg.wasm`
 - A canvas-based circular visualizer (idle breathing state; 64 radial frequency bars + a bass-reactive pulsing core while playing), respecting `prefers-reduced-motion` — its color shifts from the accent pink toward warm orange as the music's overall energy rises
 - OS/browser media notifications and hardware media key support (Media Session API)
 - Keyboard shortcuts — space to play/pause, arrow keys to seek and adjust volume
@@ -62,9 +73,10 @@ The full history of that progression — every step above as its own commit — 
 ```
 index.html    Everything — structure, styles, and script in one file
 ios-app/      A Capacitor-wrapped native iOS build of this same app
+api/          Vercel serverless functions backing the sync-with-code feature
 ```
 
-Nothing else is needed to run the web app: no build step, no dependencies to install. The only external resources are Google Fonts, `jsmediatags`, and `JSZip`, all loaded from a CDN.
+No build step is needed to run the web app itself — the whole player is one static `index.html`. `jsmediatags`, `JSZip`, and `ffmpeg.wasm` load from a CDN at runtime; Google Fonts, Google Identity Services, and Google Picker are optional and only load if Drive import is used. The `api/` functions have their own small `package.json` (just `@vercel/blob`) since they run server-side on Vercel, not in the browser.
 
 ## iOS app
 
@@ -88,12 +100,12 @@ No build step — just serve the folder statically, e.g.:
 python3 -m http.server 4173
 ```
 
-Then open `http://localhost:4173`.
+Then open `http://localhost:4173`. Sync talks to the deployed API directly (not a relative path), so it works the same way from a local server as it does in production — the other two optional cloud features (Drive import, video conversion) also work locally as-is.
 
 ## A note on persistence
 
-Imported songs are stored in the browser's IndexedDB, not uploaded anywhere — the library, and everything else that persists, is local to whichever browser and device you imported them in. To move a library to another browser or device, use Export/Import in the settings panel — it packages everything into a single `.zip` file you carry over manually; nothing here ever leaves your machine on its own.
+Imported songs are stored in the browser's IndexedDB, not uploaded anywhere — the library, and everything else that persists, is local to whichever browser and device you imported them in. To move a library to another browser or device, either use Export/Import in the settings panel (a `.zip` file you carry over manually) or Sync (a short code, faster, no file to handle) — Sync's upload is encrypted client-side, single-use, and expires within 24 hours either way; nothing here leaves your machine other than that temporary, encrypted blob.
 
 ## Deploying
 
-This is static output, so it deploys as-is to Vercel, Netlify, GitHub Pages, or any static host. This project is deployed on Vercel, connected directly to this GitHub repo — every push to `main` auto-deploys.
+The player itself is static output, so it deploys as-is to Vercel, Netlify, GitHub Pages, or any static host. This project is deployed on Vercel, connected directly to this GitHub repo — every push to `main` auto-deploys. The Sync feature additionally needs [Vercel Blob](https://vercel.com/docs/vercel-blob) storage enabled on the project (Storage tab → Create Database → Blob), which sets a `BLOB_READ_WRITE_TOKEN` environment variable the `api/` functions read; without it, everything else in the app still works, and Sync just fails with a clear error instead.
