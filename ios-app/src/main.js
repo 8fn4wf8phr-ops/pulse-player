@@ -608,6 +608,13 @@
   const driveDisconnectBtn = document.getElementById('driveDisconnectBtn');
   const convertVideoBtn = document.getElementById('convertVideoBtn');
   const videoInput = document.getElementById('videoInput');
+  const syncSendBtn = document.getElementById('syncSendBtn');
+  const syncReceiveBtn = document.getElementById('syncReceiveBtn');
+  const syncCodeDisplay = document.getElementById('syncCodeDisplay');
+  const syncCodeValue = document.getElementById('syncCodeValue');
+  const syncCodeEntry = document.getElementById('syncCodeEntry');
+  const syncCodeInput = document.getElementById('syncCodeInput');
+  const syncSubmitBtn = document.getElementById('syncSubmitBtn');
 
   function openLibrary() {
     closeSettings();
@@ -1020,6 +1027,226 @@
       alert('Import failed — that file may not be a valid Pulse library export.');
     }
   }
+
+  // ---------------------------------------------------------------------
+  // Sync with code — relay-only for now (no WebRTC/direct device-to-device
+  // path yet; that may come later as a faster option when both devices
+  // happen to be online at once). One device encrypts its library
+  // client-side with a key derived from a short code, then uploads the
+  // ciphertext straight to Vercel Blob storage from the browser — bypassing
+  // our own serverless functions for the actual bytes, since their
+  // request/response bodies are capped well below what a real library
+  // reaches (see api/sync-upload.js). The other device enters the same
+  // code to fetch and decrypt it. The server only ever sees a SHA-256 hash
+  // of the code, never the code itself, the derived key, or the plaintext.
+  //
+  // Always hits the deployed pulse-player domain directly (not a relative
+  // path) — this code also runs inside the Capacitor iOS app, served from
+  // its own bundled origin with no /api of its own.
+  //
+  // @vercel/blob's browser-facing `upload()` helper can't be vendored the
+  // way ffmpeg.wasm's wrapper was — its bundle unconditionally imports
+  // Node's `crypto`/`undici` at the top level, which only resolves via a
+  // CDN that shims Node builtins for the browser (confirmed empirically:
+  // esm.sh does this, a raw copy of the package's own dist file does not).
+  // upload() itself is plain fetch-based (unlike ffmpeg's worker), so a
+  // direct CDN import has no cross-origin-Worker restriction to work around.
+  // ---------------------------------------------------------------------
+  const SYNC_API_BASE = 'https://pulse-player-eight.vercel.app';
+  const SYNC_BLOB_CLIENT_URL = 'https://esm.sh/@vercel/blob@2.8.0/client';
+  const SYNC_CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  const SYNC_PBKDF2_SALT = new TextEncoder().encode('pulse-sync-v1');
+
+  let syncBusy = false;
+
+  function setSyncStatus(text) {
+    const el = document.getElementById('syncStatus');
+    if (el) el.textContent = text || '';
+  }
+
+  function setSyncBusy(busy) {
+    syncBusy = busy;
+    syncSendBtn.disabled = busy;
+    syncReceiveBtn.disabled = busy;
+    syncSubmitBtn.disabled = busy;
+  }
+
+  function generateSyncCode() {
+    const bytes = new Uint8Array(6);
+    crypto.getRandomValues(bytes);
+    let code = '';
+    for (let i = 0; i < 6; i++) code += SYNC_CODE_CHARS[bytes[i] % SYNC_CODE_CHARS.length];
+    return code;
+  }
+
+  async function hashSyncCode(code) {
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(code));
+    return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  // The code itself is the real secret here, so a fixed salt is fine — it
+  // just needs to make the derived key unsuitable for other purposes, not
+  // to add per-upload entropy.
+  async function deriveSyncKey(code) {
+    const keyMaterial = await crypto.subtle.importKey('raw', new TextEncoder().encode(code), 'PBKDF2', false, ['deriveKey']);
+    return crypto.subtle.deriveKey(
+      { name: 'PBKDF2', salt: SYNC_PBKDF2_SALT, iterations: 100000, hash: 'SHA-256' },
+      keyMaterial,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt', 'decrypt']
+    );
+  }
+
+  async function encryptForSync(key, blob) {
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const plain = await blob.arrayBuffer();
+    const cipher = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plain);
+    return new Blob([iv, cipher], { type: 'application/octet-stream' });
+  }
+
+  async function decryptFromSync(key, arrayBuffer) {
+    const bytes = new Uint8Array(arrayBuffer);
+    const iv = bytes.slice(0, 12);
+    const cipher = bytes.slice(12);
+    const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, cipher);
+    return new Blob([plain], { type: 'application/zip' });
+  }
+
+  function showSyncSendUI() {
+    syncCodeEntry.hidden = true;
+    syncCodeDisplay.hidden = false;
+  }
+
+  function showSyncReceiveUI() {
+    syncCodeDisplay.hidden = true;
+    syncCodeEntry.hidden = false;
+    syncCodeInput.value = '';
+    syncCodeInput.focus();
+  }
+
+  function hideSyncUI() {
+    syncCodeDisplay.hidden = true;
+    syncCodeEntry.hidden = true;
+  }
+
+  async function startSync() {
+    if (syncBusy) return;
+    const zipBlob = await buildLibraryZip();
+    if (!zipBlob) {
+      alert('No local tracks to sync yet.');
+      return;
+    }
+
+    setSyncBusy(true);
+    showSyncSendUI();
+    const code = generateSyncCode();
+    syncCodeValue.textContent = code;
+    setSyncStatus('Encrypting…');
+
+    try {
+      const key = await deriveSyncKey(code);
+      const encryptedBlob = await encryptForSync(key, zipBlob);
+      const codeHash = await hashSyncCode(code);
+
+      setSyncStatus('Uploading…');
+      const { upload } = await import(SYNC_BLOB_CLIENT_URL);
+      await upload(`sync/${codeHash}.bin`, encryptedBlob, {
+        access: 'public',
+        handleUploadUrl: `${SYNC_API_BASE}/api/sync-upload`,
+        contentType: 'application/octet-stream',
+      });
+
+      setSyncStatus(`Code ${code} — enter it on your other device within 24 hours.`);
+    } catch (err) {
+      console.warn('Pulse: sync upload failed', err);
+      setSyncStatus('Upload failed — check your connection and try again.');
+    } finally {
+      setSyncBusy(false);
+    }
+  }
+
+  async function claimSync(rawCode) {
+    if (syncBusy) return;
+    const code = (rawCode || '').trim().toUpperCase();
+    if (code.length !== 6) {
+      setSyncStatus('Enter the full 6-character code.');
+      return;
+    }
+
+    setSyncBusy(true);
+    setSyncStatus('Looking up code…');
+
+    try {
+      const codeHash = await hashSyncCode(code);
+      const lookupResponse = await fetch(`${SYNC_API_BASE}/api/sync-download?codeHash=${codeHash}`);
+      if (!lookupResponse.ok) {
+        setSyncStatus('Invalid or expired code.');
+        return;
+      }
+      const { url } = await lookupResponse.json();
+
+      setSyncStatus('Downloading…');
+      const dataResponse = await fetch(url);
+      if (!dataResponse.ok) {
+        setSyncStatus('Invalid or expired code.');
+        return;
+      }
+      const buffer = await dataResponse.arrayBuffer();
+
+      let zipBlob;
+      try {
+        const key = await deriveSyncKey(code);
+        zipBlob = await decryptFromSync(key, buffer);
+      } catch (err) {
+        setSyncStatus('Invalid or expired code.');
+        return;
+      }
+
+      // Best-effort — the import already succeeded either way; this just
+      // tells the server it can delete the blob now that it's been claimed.
+      fetch(`${SYNC_API_BASE}/api/sync-claim`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ codeHash }),
+      }).catch(() => {});
+
+      setSyncStatus('Importing…');
+      await importLibrary(zipBlob);
+      hideSyncUI();
+      setSyncStatus('Synced from your other device.');
+    } catch (err) {
+      console.warn('Pulse: sync download failed', err);
+      setSyncStatus('Invalid or expired code.');
+    } finally {
+      setSyncBusy(false);
+    }
+  }
+
+  syncSendBtn.addEventListener('click', () => {
+    if (!syncCodeDisplay.hidden && !syncBusy) {
+      hideSyncUI();
+      setSyncStatus('');
+      return;
+    }
+    startSync();
+  });
+  syncReceiveBtn.addEventListener('click', () => {
+    if (!syncCodeEntry.hidden && !syncBusy) {
+      hideSyncUI();
+      setSyncStatus('');
+      return;
+    }
+    showSyncReceiveUI();
+    setSyncStatus('');
+  });
+  syncSubmitBtn.addEventListener('click', () => claimSync(syncCodeInput.value));
+  syncCodeInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') claimSync(syncCodeInput.value);
+  });
+  syncCodeInput.addEventListener('input', () => {
+    syncCodeInput.value = syncCodeInput.value.toUpperCase();
+  });
 
   // ---------------------------------------------------------------------
   // Google Drive import — a fully optional, opt-in extra alongside local

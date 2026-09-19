@@ -182,6 +182,7 @@
     display: flex;
     flex-direction: column;
     gap: 20px;
+    padding-right: 8px;
   }
   .settings-heading {
     font-family: 'IBM Plex Mono', monospace;
@@ -224,6 +225,52 @@
     color: var(--text-dim);
     min-height: 14px;
   }
+
+  .sync-code-display {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 10px 0 2px;
+  }
+  .sync-code-value {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+    margin: 0;
+  }
+  .sync-code-entry {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .sync-code-entry input {
+    flex: 1;
+    min-width: 0;
+    background: var(--track-bg);
+    border: none;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 16px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text);
+  }
+  .sync-code-entry input:focus { outline: 1px solid var(--accent); }
+  .sync-submit-btn {
+    flex-shrink: 0;
+    font-size: 12px;
+    font-family: 'Inter', sans-serif;
+    padding: 8px 14px;
+    border-radius: 8px;
+    background: var(--track-bg);
+    color: var(--text);
+  }
+  .sync-submit-btn:hover { color: var(--accent); }
+  .btn:disabled { opacity: 0.4; cursor: default; pointer-events: none; }
 
   .track-info {
     margin-top: 22px;

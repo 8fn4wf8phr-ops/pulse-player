@@ -98,6 +98,27 @@
           </button>
         </div>
         <p class="settings-note" id="convertStatus"></p>
+
+        <p class="settings-heading">Sync with code (optional)</p>
+        <div class="settings-row">
+          <span class="settings-label">Sync</span>
+          <div class="settings-drive-actions">
+            <button class="btn settings-toggle" id="syncSendBtn" aria-label="Get a code to send your library to another device" title="Get a code">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"></path><polyline points="5 12 12 5 19 12"></polyline></svg>
+            </button>
+            <button class="btn settings-toggle" id="syncReceiveBtn" aria-label="Enter a code to receive a library from another device" title="Enter a code">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"></path><polyline points="19 12 12 19 5 12"></polyline></svg>
+            </button>
+          </div>
+        </div>
+        <div class="sync-code-display" id="syncCodeDisplay" hidden>
+          <p class="sync-code-value" id="syncCodeValue"></p>
+        </div>
+        <div class="sync-code-entry" id="syncCodeEntry" hidden>
+          <input type="text" id="syncCodeInput" maxlength="6" placeholder="ABCD23" autocapitalize="characters" autocomplete="off" spellcheck="false" aria-label="Enter sync code">
+          <button class="btn sync-submit-btn" id="syncSubmitBtn">Go</button>
+        </div>
+        <p class="settings-note" id="syncStatus"></p>
       </div>
     </div>
   </div>
