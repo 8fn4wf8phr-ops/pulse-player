@@ -526,7 +526,31 @@
   });
   progressBar.addEventListener('pointerup', () => { isSeeking = false; });
 
+  // iOS ignores audio.volume (not settable, always reads back 1) in both
+  // Safari and Capacitor's WKWebView — volume there is hardware-buttons
+  // only. Capacitor's injected global is checked first when present; 'web'
+  // means a plain browser, which could still be mobile Safari, so that case
+  // falls through to the UA check. iPadOS 13+ Safari reports a Mac UA, hence
+  // the touch-points check.
+  function detectIOS() {
+    const cap = window.Capacitor;
+    if (cap && typeof cap.getPlatform === 'function') {
+      const platform = cap.getPlatform();
+      if (platform === 'ios') return true;
+      if (platform === 'android') return false;
+    }
+    if (/iPad|iPhone|iPod/.test(navigator.userAgent || '')) return true;
+    return navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+  }
+  const IS_IOS = detectIOS();
+
+  if (IS_IOS) {
+    volumeSlider.hidden = true;
+    document.getElementById('volumeIosNote').hidden = false;
+  }
+
   function applyVolume() {
+    if (IS_IOS) return;
     const v = volumeSlider.value / 100;
     audioA.volume = v;
     audioB.volume = v;
@@ -616,6 +640,12 @@
   const syncCodeInput = document.getElementById('syncCodeInput');
   const syncSubmitBtn = document.getElementById('syncSubmitBtn');
 
+  // Inline rename state. Keyed by the track object itself (not its index),
+  // so a removal or reorder mid-edit can't leave the wrong row in edit mode.
+  let editingTrack = null;
+  let editDraft = { title: '', artist: '' };
+  let editError = '';
+
   function openLibrary() {
     closeSettings();
     libraryPanel.classList.add('open');
@@ -624,6 +654,7 @@
   function closeLibrary() {
     libraryPanel.classList.remove('open');
     libraryBtn.setAttribute('aria-pressed', 'false');
+    if (editingTrack) cancelEdit();
   }
   libraryBtn.addEventListener('click', () => {
     if (libraryPanel.classList.contains('open')) closeLibrary(); else openLibrary();
@@ -666,11 +697,11 @@
       e.preventDefault();
       const el = activeEl();
       if (el.duration) el.currentTime = Math.max(0, el.currentTime - 5);
-    } else if (e.key === 'ArrowUp') {
+    } else if (e.key === 'ArrowUp' && !IS_IOS) {
       e.preventDefault();
       volumeSlider.value = Math.min(100, Number(volumeSlider.value) + 5);
       volumeSlider.dispatchEvent(new Event('input'));
-    } else if (e.key === 'ArrowDown') {
+    } else if (e.key === 'ArrowDown' && !IS_IOS) {
       e.preventDefault();
       volumeSlider.value = Math.max(0, Number(volumeSlider.value) - 5);
       volumeSlider.dispatchEvent(new Event('input'));
@@ -679,7 +710,14 @@
 
   function renderLibrary() {
     libCountEl.textContent = `${tracks.length} track${tracks.length === 1 ? '' : 's'}`;
+    // Other code paths re-render this list (adding a track, auto-advance);
+    // remember which edit field had focus so a re-render doesn't drop it.
+    const focusedEl = document.activeElement;
+    const focusedField = editingTrack && libraryList.contains(focusedEl) ? focusedEl.dataset.editField : null;
+    const caret = focusedField ? focusedEl.selectionStart : null;
     libraryList.innerHTML = '';
+
+    if (editingTrack && !tracks.includes(editingTrack)) editingTrack = null;
 
     if (!tracks.length) {
       const empty = document.createElement('p');
@@ -692,6 +730,12 @@
     tracks.forEach((track, i) => {
       const row = document.createElement('div');
       row.className = 'lib-row' + (i === trackIndex ? ' active' : '');
+
+      if (track === editingTrack) {
+        buildEditRow(row);
+        libraryList.appendChild(row);
+        return;
+      }
 
       const main = document.createElement('button');
       main.type = 'button';
@@ -723,9 +767,134 @@
       });
 
       row.appendChild(main);
+      // Only tracks persisted to IndexedDB (they have an id) are renameable.
+      if (track.id != null) {
+        row.appendChild(makeIconButton('lib-row-icon-btn', `Rename ${track.title}`, ICON_PENCIL, (e) => {
+          e.stopPropagation();
+          startEdit(track);
+        }));
+      }
       row.appendChild(removeBtn);
       libraryList.appendChild(row);
     });
+
+    if (focusedField) {
+      const input = libraryList.querySelector(`[data-edit-field="${focusedField}"]`);
+      if (input) {
+        input.focus();
+        if (caret != null) input.setSelectionRange(caret, caret);
+      }
+    }
+  }
+
+  const ICON_PENCIL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>';
+  const ICON_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+  const ICON_CLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
+
+  function makeIconButton(className, label, svgMarkup, onClick) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = className;
+    btn.setAttribute('aria-label', label);
+    btn.title = label;
+    btn.innerHTML = svgMarkup;
+    btn.addEventListener('click', onClick);
+    return btn;
+  }
+
+  function makeEditInput(field, label) {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.maxLength = 120;
+    input.value = editDraft[field];
+    input.placeholder = label;
+    input.setAttribute('aria-label', label);
+    input.autocomplete = 'off';
+    input.dataset.editField = field;
+    input.addEventListener('input', () => { editDraft[field] = input.value; });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        saveEdit();
+      } else if (e.key === 'Escape') {
+        e.stopPropagation();
+        cancelEdit();
+      }
+    });
+    return input;
+  }
+
+  function buildEditRow(row) {
+    row.classList.add('editing');
+
+    const fields = document.createElement('div');
+    fields.className = 'lib-row-edit';
+    fields.appendChild(makeEditInput('title', 'Title'));
+    fields.appendChild(makeEditInput('artist', 'Artist'));
+    if (editError) {
+      const msg = document.createElement('p');
+      msg.className = 'lib-row-edit-error';
+      msg.setAttribute('role', 'alert');
+      msg.textContent = editError;
+      fields.appendChild(msg);
+    }
+
+    row.appendChild(fields);
+    row.appendChild(makeIconButton('lib-row-icon-btn', 'Save name', ICON_CHECK, () => saveEdit()));
+    row.appendChild(makeIconButton('lib-row-icon-btn', 'Cancel rename', ICON_CLOSE, () => cancelEdit()));
+  }
+
+  function startEdit(track) {
+    editingTrack = track;
+    editDraft = { title: track.title, artist: track.artist };
+    editError = '';
+    renderLibrary();
+    const input = libraryList.querySelector('[data-edit-field="title"]');
+    if (input) {
+      input.focus();
+      input.select();
+    }
+  }
+
+  function cancelEdit() {
+    editingTrack = null;
+    editError = '';
+    renderLibrary();
+  }
+
+  function saveEdit() {
+    const track = editingTrack;
+    if (!track) return;
+
+    const title = editDraft.title.trim();
+    if (!title) {
+      editError = "Title can't be empty.";
+      renderLibrary();
+      const input = libraryList.querySelector('[data-edit-field="title"]');
+      if (input) input.focus();
+      return;
+    }
+    // Same fallback the importer uses when a file has no artist info.
+    const artist = editDraft.artist.trim() || 'Unknown Artist';
+
+    const changed = title !== track.title || artist !== track.artist;
+    editingTrack = null;
+    editError = '';
+    // Saving without changing anything isn't a rename: don't stamp it, or
+    // it would outrank a genuinely newer rename made on another device.
+    if (changed) {
+      track.title = title;
+      track.artist = artist;
+      track.renamedAt = Date.now();
+      if (tracks[trackIndex] === track) setNowPlayingUI(track);
+    }
+    renderLibrary();
+
+    if (changed && track.id != null) {
+      dbUpdateTrack(track.id, { title, artist, renamedAt: track.renamedAt }).catch((err) => {
+        console.warn('Pulse: failed to save renamed track to storage', err);
+      });
+    }
   }
 
   // Removes a track from the library, storage, and (if it's the one
@@ -851,6 +1020,23 @@
     });
   }
 
+  async function dbUpdateTrack(id, changes) {
+    const db = await getDB();
+    if (!db) return;
+    return new Promise((resolve, reject) => {
+      const store = db.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME);
+      const getReq = store.get(id);
+      getReq.onsuccess = () => {
+        const rec = getReq.result;
+        if (!rec) { resolve(); return; }
+        const putReq = store.put({ ...rec, ...changes });
+        putReq.onsuccess = () => resolve();
+        putReq.onerror = () => reject(putReq.error);
+      };
+      getReq.onerror = () => reject(getReq.error);
+    });
+  }
+
   // Guards against re-adding the same file twice (e.g. dropping the same
   // folder again in a later session, once it's already persisted).
   const knownFileKeys = new Set();
@@ -884,6 +1070,8 @@
           if (id != null && tracks[trackIndex] === track) {
             localStorage.setItem('pulse:lastTrackId', id);
           }
+          // The row rendered before it had an id, so it had no rename button.
+          if (id != null) renderLibrary();
         })
         .catch(() => {});
     }
@@ -904,7 +1092,7 @@
     records.forEach((rec) => {
       knownFileKeys.add(`${rec.name}:${rec.size}`);
       const mood = rec.mood || pickMood(rec.title, rec.artist);
-      tracks.push({ id: rec.id, title: rec.title, artist: rec.artist, mood, name: rec.name, size: rec.size, url: URL.createObjectURL(rec.data) });
+      tracks.push({ id: rec.id, title: rec.title, artist: rec.artist, mood, name: rec.name, size: rec.size, url: URL.createObjectURL(rec.data), hash: rec.hash || null, renamedAt: rec.renamedAt || 0 });
     });
   }
 
@@ -943,11 +1131,32 @@
     const records = await dbGetAllTracks();
     if (!records.length) return null;
 
+    // Every exported track carries its content hash so the receiving device
+    // can recognise it (even under a different name) without reading it.
+    for (const rec of records) {
+      if (rec.hash) continue;
+      rec.hash = await hashBlob(rec.data);
+      if (!rec.hash) continue;
+      dbUpdateTrack(rec.id, { hash: rec.hash }).catch(() => {});
+      const live = tracks.find((t) => t.id === rec.id);
+      if (live) live.hash = rec.hash;
+    }
+
     const zip = new JSZip();
     const metadata = records.map((rec) => {
       const filename = `${rec.id}-${sanitizeForFilename(rec.title)}.${extForType(rec.type)}`;
       zip.file(`audio/${filename}`, rec.data);
-      return { id: rec.id, title: rec.title, artist: rec.artist, mood: rec.mood, type: rec.type, filename };
+      return {
+        id: rec.id,
+        title: rec.title,
+        artist: rec.artist,
+        mood: rec.mood,
+        type: rec.type,
+        filename,
+        hash: rec.hash || null,
+        size: rec.data.size,
+        renamedAt: rec.renamedAt || 0,
+      };
     });
     zip.file('metadata.json', JSON.stringify(metadata, null, 2));
     return zip.generateAsync({ type: 'blob' });
@@ -976,7 +1185,40 @@
     }
   }
 
-  async function importLibrary(file) {
+  async function hashBlob(blob) {
+    try {
+      const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
+      return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+    } catch (err) {
+      return null;
+    }
+  }
+
+  // A track's identity is its audio content, not its title — so renaming a
+  // track on one device can't make it look like a different song on another.
+  // Hashes are computed lazily and cached on the record, so tracks added
+  // before this existed pick one up the first time they're exported or
+  // compared.
+  async function ensureTrackHash(track) {
+    if (track.hash) return track.hash;
+    try {
+      const blob = await (await fetch(track.url)).blob();
+      const hash = await hashBlob(blob);
+      if (hash) {
+        track.hash = hash;
+        if (track.id != null) dbUpdateTrack(track.id, { hash }).catch(() => {});
+      }
+    } catch (err) {
+      // leave it unhashed; it just won't match by content
+    }
+    return track.hash || null;
+  }
+
+  // Returns { imported, renamed } on success, null if the file was unreadable.
+  // A track that's already here (same audio) is never duplicated; if the
+  // incoming copy was renamed more recently than the local one, the newer
+  // name wins, so a stale snapshot can't undo a newer rename either.
+  async function importLibrary(file, { quiet = false } = {}) {
     try {
       const zip = await JSZip.loadAsync(file);
       const metaEntry = zip.file('metadata.json');
@@ -985,18 +1227,67 @@
 
       const wasEmpty = tracks.length === 0;
       let importedCount = 0;
+      let renamedCount = 0;
 
       for (const entry of metadata) {
-        const alreadyExists = tracks.some((t) => t.title === entry.title && t.artist === entry.artist);
-        if (alreadyExists) continue;
-
-        const zipEntry = zip.file(`audio/${entry.filename}`);
-        if (!zipEntry) continue;
-
-        const rawBlob = await zipEntry.async('blob');
         const type = entry.type || 'audio/mpeg';
-        const blob = new Blob([rawBlob], { type });
+        let audio = null;
+        const getAudio = async () => {
+          if (!audio) {
+            const zipEntry = zip.file(`audio/${entry.filename}`);
+            if (!zipEntry) return null;
+            audio = new Blob([await zipEntry.async('blob')], { type });
+          }
+          return audio;
+        };
+
+        // Newer exports carry each track's hash, so a track that's already
+        // here is matched without reading its audio at all.
+        let hash = typeof entry.hash === 'string' ? entry.hash : null;
+        let match = hash ? tracks.find((t) => t.hash === hash) : null;
+
+        if (!match) {
+          const incoming = await getAudio();
+          if (!incoming) continue;
+          hash = await hashBlob(incoming);
+          if (hash) {
+            match = tracks.find((t) => t.hash === hash);
+            if (!match) {
+              // Local tracks from before hashing existed: only the ones with
+              // the same byte size can possibly match, so only hash those.
+              for (const t of tracks) {
+                if (t.hash || t.size !== incoming.size) continue;
+                if ((await ensureTrackHash(t)) === hash) { match = t; break; }
+              }
+            }
+          } else {
+            // Hashing unavailable (insecure context) — fall back to names.
+            match = tracks.find((t) => t.title === entry.title && t.artist === entry.artist);
+          }
+        }
+
+        if (match) {
+          const incomingAt = Number(entry.renamedAt) || 0;
+          const nameChanged = entry.title !== match.title || entry.artist !== match.artist;
+          if (nameChanged && incomingAt > (match.renamedAt || 0)) {
+            match.title = entry.title;
+            match.artist = entry.artist;
+            match.renamedAt = incomingAt;
+            if (tracks[trackIndex] === match) setNowPlayingUI(match);
+            if (match.id != null) {
+              dbUpdateTrack(match.id, { title: entry.title, artist: entry.artist, renamedAt: incomingAt }).catch((err) => {
+                console.warn('Pulse: failed to save synced rename', err);
+              });
+            }
+            renamedCount++;
+          }
+          continue;
+        }
+
+        const blob = await getAudio();
+        if (!blob) continue;
         const mood = entry.mood || pickMood(entry.title, entry.artist);
+        const renamedAt = Number(entry.renamedAt) || 0;
 
         const id = await dbAddTrack({
           title: entry.title,
@@ -1006,25 +1297,28 @@
           size: blob.size,
           type,
           data: blob,
+          hash,
+          renamedAt,
         });
 
         knownFileKeys.add(`${entry.filename}:${blob.size}`);
-        tracks.push({ id, title: entry.title, artist: entry.artist, mood, name: entry.filename, size: blob.size, url: URL.createObjectURL(blob) });
+        tracks.push({ id, title: entry.title, artist: entry.artist, mood, name: entry.filename, size: blob.size, url: URL.createObjectURL(blob), hash, renamedAt });
         importedCount++;
       }
 
-      if (!importedCount) {
+      if (importedCount || renamedCount) {
+        rebuildOrder();
+        renderLibrary();
+        if (wasEmpty && importedCount) hardSwitch(0, false);
+        flashSuccess(importBtn);
+      } else if (!quiet) {
         alert('Nothing new to import — those tracks are already in your library.');
-        return;
       }
-
-      rebuildOrder();
-      renderLibrary();
-      if (wasEmpty) hardSwitch(0, false);
-      flashSuccess(importBtn);
+      return { imported: importedCount, renamed: renamedCount };
     } catch (err) {
       console.warn('Pulse: import failed', err);
       alert('Import failed — that file may not be a valid Pulse library export.');
+      return null;
     }
   }
 
@@ -1212,9 +1506,16 @@
       }).catch(() => {});
 
       setSyncStatus('Importing…');
-      await importLibrary(zipBlob);
+      const result = await importLibrary(zipBlob, { quiet: true });
+      if (!result) {
+        setSyncStatus('Import failed — that library may be damaged.');
+        return;
+      }
       hideSyncUI();
-      setSyncStatus('Synced from your other device.');
+      const parts = [];
+      if (result.imported) parts.push(`${result.imported} new track${result.imported === 1 ? '' : 's'}`);
+      if (result.renamed) parts.push(`${result.renamed} renamed`);
+      setSyncStatus(parts.length ? `Synced: ${parts.join(', ')}.` : 'Already up to date.');
     } catch (err) {
       console.warn('Pulse: sync download failed', err);
       setSyncStatus('Invalid or expired code.');
@@ -1565,10 +1866,12 @@
   }
 
   function restoreSettings() {
-    const savedVolume = localStorage.getItem('pulse:volume');
-    if (savedVolume !== null) volumeSlider.value = savedVolume;
-    applyVolume();
-    volumeIcon.style.opacity = Number(volumeSlider.value) === 0 ? '0.4' : '1';
+    if (!IS_IOS) {
+      const savedVolume = localStorage.getItem('pulse:volume');
+      if (savedVolume !== null) volumeSlider.value = savedVolume;
+      applyVolume();
+      volumeIcon.style.opacity = Number(volumeSlider.value) === 0 ? '0.4' : '1';
+    }
 
     if (localStorage.getItem('pulse:shuffle') === '1') {
       shuffleBtn.classList.add('toggled');
