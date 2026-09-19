@@ -44,6 +44,8 @@ A music player web app built in vanilla HTML, CSS, and JavaScript — no framewo
 
 **18. iOS volume.** iOS doesn't let JavaScript set an `<audio>` element's volume — the property always reads back as 1, in Safari and in Capacitor's WKWebView alike — so the volume slider was a control that did nothing on the very devices it was most likely to be touched on. On iOS the slider is now replaced with a "Use your device's volume buttons" hint, and `audio.volume` is never touched there. Platform detection checks the `window.Capacitor.getPlatform()` global that Capacitor injects into the native app, then falls back to the user agent (including iPadOS, which reports itself as a Mac), and everywhere else the slider is unchanged. It deliberately doesn't try to fake volume with a Web Audio `GainNode`, which is unreliable inside WKWebView.
 
+**19. Music that survives a locked phone.** Testing the iOS app on a real device turned up two problems the desktop never showed: playback stopped when the screen locked, and pulling out a headphone made it stutter. The lock-screen entry also had no cover art. Three causes, three fixes. The app had no permission to play in the background, so `Info.plist` now declares the `audio` background mode and `AppDelegate` sets a playback audio session. The Media Session `play`/`pause` handlers were toggles, so when iOS paused the audio itself on unplug and then also sent a "pause" command, the toggle started it back up — they're idempotent now, and the lock screen shows the app icon and an album name. And the real culprit for the lock-screen cutoff: everything played through the Web Audio graph that powers the equalizer, crossfade, and visualizer, which iOS shuts off when the screen locks. On iOS the graph is now skipped entirely so the `<audio>` element plays straight to the system — which also means the equalizer and crossfade don't exist there and the visualizer stays in its idle animation while music plays. Everywhere else the graph is unchanged.
+
 The full history of that progression — every step above as its own commit — is in this repo's [commit log](../../commits/main).
 
 ## Design
@@ -57,8 +59,8 @@ The full history of that progression — every step above as its own commit — 
 - Play/pause, seekable progress bar (click, drag, or arrow keys), volume control (hardware buttons only on iOS)
 - Next/previous with a 3-second "restart vs. skip back" rule, auto-advance on end, repeat
 - Real shuffle — randomized play order, not just a toggle
-- Crossfade between tracks (auto-triggered near the end of a track, or on manual skip)
-- A 3-band equalizer (bass/mid/treble), applied live via Web Audio `BiquadFilterNode`s
+- Crossfade between tracks (auto-triggered near the end of a track, or on manual skip) — not on iOS, where the audio graph is skipped so music keeps playing with the screen locked
+- A 3-band equalizer (bass/mid/treble), applied live via Web Audio `BiquadFilterNode`s (not on iOS — see below)
 - Import songs by file picker, folder picker, or drag-and-drop (including whole folders)
 - Automatic title/artist from ID3 tags, with filename-based fallback parsing
 - A library panel to browse, jump to, or remove any imported track
@@ -70,7 +72,7 @@ The full history of that progression — every step above as its own commit — 
 - Optional Google Drive import, alongside local file/folder import
 - Convert a screen-recorded video's audio to MP3 for import, entirely client-side via `ffmpeg.wasm`
 - A canvas-based circular visualizer (idle breathing state; 64 radial frequency bars + a bass-reactive pulsing core while playing), respecting `prefers-reduced-motion` — its color shifts from the accent pink toward warm orange as the music's overall energy rises
-- OS/browser media notifications and hardware media key support (Media Session API)
+- OS/browser media notifications and hardware media key support (Media Session API), with cover art on the lock screen, and background playback in the iOS app
 - Keyboard shortcuts — space to play/pause, arrow keys to seek and adjust volume
 - Mood theming — each track recolors the whole player (accent color, not just the visualizer), derived deterministically per track and persisted with it
 
