@@ -40,6 +40,10 @@ A music player web app built in vanilla HTML, CSS, and JavaScript — no framewo
 
 **16. Sync with a code.** Moving a library between devices used to mean exporting a `.zip` and manually carrying it over. Sync adds a faster path: generate a short code on one device, and it encrypts the library client-side and uploads it to temporary storage; entering that same code on another device downloads and decrypts it there. The server only ever sees a hash of the code — never the code itself, the encryption key, or the plaintext — and the upload is single-use and deleted after the first successful claim, or after 24 hours either way. It's relay-only for now; a faster direct device-to-device path (WebRTC, no server relay) may come later for when both devices happen to be online at the same time.
 
+**17. Renaming tracks.** Titles and artists come from ID3 tags or a guess at the filename, and both are wrong often enough that fixing them shouldn't mean re-importing. Every row in the library panel now has a pencil that turns the title and artist into inline inputs (✓ to save, ✕ or Escape to cancel; a blank title is refused, a blank artist becomes "Unknown Artist"). The change is written to IndexedDB and, if it's the track that's loaded, shows up in the now-playing text and lock-screen metadata immediately. Renaming exposed a flaw in sync, which decided two tracks were "the same song" by comparing title and artist — so a track renamed on one device arrived on the other as a duplicate. Tracks are now matched by a SHA-256 of their audio instead, and each rename is timestamped: a newer name wins on the receiving device, a stale snapshot can't overwrite a newer rename, and two different songs that happen to share a title are no longer silently merged. Hashes are computed lazily and cached, so libraries from before this change pick theirs up the first time they sync.
+
+**18. iOS volume.** iOS doesn't let JavaScript set an `<audio>` element's volume — the property always reads back as 1, in Safari and in Capacitor's WKWebView alike — so the volume slider was a control that did nothing on the very devices it was most likely to be touched on. On iOS the slider is now replaced with a "Use your device's volume buttons" hint, and `audio.volume` is never touched there. Platform detection checks the `window.Capacitor.getPlatform()` global that Capacitor injects into the native app, then falls back to the user agent (including iPadOS, which reports itself as a Mac), and everywhere else the slider is unchanged. It deliberately doesn't try to fake volume with a Web Audio `GainNode`, which is unreliable inside WKWebView.
+
 The full history of that progression — every step above as its own commit — is in this repo's [commit log](../../commits/main).
 
 ## Design
@@ -50,7 +54,7 @@ The full history of that progression — every step above as its own commit — 
 
 ## Features
 
-- Play/pause, seekable progress bar (click, drag, or arrow keys), volume control
+- Play/pause, seekable progress bar (click, drag, or arrow keys), volume control (hardware buttons only on iOS)
 - Next/previous with a 3-second "restart vs. skip back" rule, auto-advance on end, repeat
 - Real shuffle — randomized play order, not just a toggle
 - Crossfade between tracks (auto-triggered near the end of a track, or on manual skip)
@@ -60,7 +64,9 @@ The full history of that progression — every step above as its own commit — 
 - A library panel to browse, jump to, or remove any imported track
 - Library, volume, playback, crossfade, and EQ settings persist across reloads (IndexedDB + `localStorage`)
 - Export/import the library as a `.zip` file to move it between browsers or devices
-- Sync a library between devices with a short one-time code — encrypted client-side, relay-only, no account
+- Rename any track's title and artist inline from the library panel
+- Sync a library between devices with a short one-time code — encrypted client-side, relay-only, no account. Tracks are matched by their audio content, so a rename travels with the track instead of creating a duplicate
+- On iOS, the volume slider is replaced by a hint to use the hardware buttons (iOS doesn't allow web pages to set audio volume)
 - Optional Google Drive import, alongside local file/folder import
 - Convert a screen-recorded video's audio to MP3 for import, entirely client-side via `ffmpeg.wasm`
 - A canvas-based circular visualizer (idle breathing state; 64 radial frequency bars + a bass-reactive pulsing core while playing), respecting `prefers-reduced-motion` — its color shifts from the accent pink toward warm orange as the music's overall energy rises
