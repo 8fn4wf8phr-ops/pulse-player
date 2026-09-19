@@ -215,6 +215,96 @@
     color: var(--text-dim);
   }
 
+  .library-panel { flex-direction: column; }
+
+  .lib-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 4px 2px;
+  }
+  .lib-toolbar select {
+    flex: 1;
+    min-width: 0;
+    background: var(--track-bg);
+    color: var(--text);
+    border: none;
+    border-radius: 6px;
+    padding: 5px 8px;
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+  }
+  .lib-toolbar select:focus-visible { outline: 1px solid var(--accent); }
+  .lib-delete-armed { color: var(--accent); font-size: 11px; padding: 0 6px; }
+  .lib-new-playlist {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 4px 4px;
+  }
+  .lib-new-playlist input {
+    flex: 1;
+    min-width: 0;
+    background: var(--track-bg);
+    color: var(--text);
+    border: none;
+    border-radius: 6px;
+    padding: 5px 8px;
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    outline: none;
+  }
+  .lib-new-playlist input:focus { outline: 1px solid var(--accent); }
+  @media (pointer: coarse) {
+    .lib-toolbar select, .lib-new-playlist input { font-size: 16px; }
+  }
+
+  .lib-row-handle {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: grab;
+    touch-action: none;
+    padding: 0 4px 0 8px;
+    display: flex;
+    align-items: center;
+  }
+  .lib-row-handle svg { width: 14px; height: 14px; }
+  .lib-row-handle:hover, .lib-row-handle:focus-visible { color: var(--accent); }
+  .lib-row.dragging {
+    position: relative;
+    z-index: 2;
+    background: var(--surface-raised);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
+    cursor: grabbing;
+  }
+  .lib-row.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+  .lib-row.drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
+  body.is-dragging { user-select: none; -webkit-user-select: none; cursor: grabbing; }
+
+  .lib-row-menu {
+    margin: 0 6px 4px 30px;
+    padding: 6px;
+    border-radius: 8px;
+    background: var(--surface-raised);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .lib-menu-item {
+    background: var(--track-bg);
+    color: var(--text);
+    border: none;
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .lib-menu-item.member { background: var(--accent-dim); color: var(--accent); }
+  .lib-menu-empty { margin: 0; font-size: 11px; color: var(--text-dim); }
+
   .lib-empty {
     margin: auto;
     max-width: 220px;

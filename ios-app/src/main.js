@@ -289,8 +289,19 @@
 
   // Keeps the current track first so shuffling doesn't yank playback
   // sideways; rebuild whenever the library or the shuffle toggle changes.
+  // Next/previous/auto-advance/shuffle all work off this queue, which is the
+  // library or a playlist depending on where the current track was started.
+  function queueIndices() {
+    const all = tracks.map((_, i) => i);
+    if (playContext === 'all') return all;
+    const pl = playlists.find((p) => p.id === playContext);
+    if (!pl) return all;
+    const idxs = pl.trackIds.map((id) => tracks.findIndex((t) => t.id === id)).filter((i) => i >= 0);
+    return idxs.length ? idxs : all;
+  }
+
   function rebuildOrder() {
-    const indices = tracks.map((_, i) => i);
+    const indices = queueIndices();
     if (shuffleBtn.classList.contains('toggled')) {
       for (let i = indices.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
@@ -300,12 +311,14 @@
       if (pos > 0) [indices[0], indices[pos]] = [indices[pos], indices[0]];
     }
     playOrder = indices;
-    orderPos = Math.max(0, playOrder.indexOf(trackIndex));
+    orderPos = playOrder.indexOf(trackIndex);
   }
 
   function stepTrack(delta, autoplay) {
     if (!tracks.length) return;
     if (!playOrder.length) rebuildOrder();
+    // -1: the current track isn't in the queue, so next is the first entry and previous the last
+    if (orderPos < 0) orderPos = delta > 0 ? -1 : 0;
     orderPos = (orderPos + delta + playOrder.length) % playOrder.length;
     switchTrack(playOrder[orderPos], autoplay);
   }
@@ -357,7 +370,7 @@
     el.src = track.url;
     setNowPlayingUI(track);
     resetProgressUI();
-    orderPos = Math.max(0, playOrder.indexOf(trackIndex));
+    orderPos = playOrder.indexOf(trackIndex);
     if (track.id != null) localStorage.setItem('pulse:lastTrackId', track.id);
     renderLibrary();
     if (autoplay) el.play().catch(() => {});
@@ -411,7 +424,7 @@
 
     activeSlot = toKey;
     trackIndex = index;
-    orderPos = Math.max(0, playOrder.indexOf(trackIndex));
+    orderPos = playOrder.indexOf(trackIndex);
     if (track.id != null) localStorage.setItem('pulse:lastTrackId', track.id);
     setNowPlayingUI(track);
     renderLibrary();
@@ -678,6 +691,21 @@
   let editDraft = { title: '', artist: '' };
   let editError = '';
 
+  // Library views and playlists. currentView is what the list is showing;
+  // playContext is the list the playing track was started from, which is
+  // what next/previous/auto-advance follow.
+  let currentView = 'all';
+  let playContext = 'all';
+  let playlists = [];
+  let menuTrack = null;
+  const viewSelect = document.getElementById('viewSelect');
+  const newPlaylistBtn = document.getElementById('newPlaylistBtn');
+  const deletePlaylistBtn = document.getElementById('deletePlaylistBtn');
+  const newPlaylistForm = document.getElementById('newPlaylistForm');
+  const newPlaylistName = document.getElementById('newPlaylistName');
+  const newPlaylistCancel = document.getElementById('newPlaylistCancel');
+  const ICON_TRASH = deletePlaylistBtn.innerHTML;
+
   function openLibrary() {
     closeSettings();
     libraryPanel.classList.add('open');
@@ -687,6 +715,7 @@
     libraryPanel.classList.remove('open');
     libraryBtn.setAttribute('aria-pressed', 'false');
     if (editingTrack) cancelEdit();
+    if (menuTrack) { menuTrack = null; renderLibrary(); }
   }
   libraryBtn.addEventListener('click', () => {
     if (libraryPanel.classList.contains('open')) closeLibrary(); else openLibrary();
@@ -740,8 +769,369 @@
     }
   });
 
+  const ICON_HANDLE = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"></circle><circle cx="15" cy="6" r="1.6"></circle><circle cx="9" cy="12" r="1.6"></circle><circle cx="15" cy="12" r="1.6"></circle><circle cx="9" cy="18" r="1.6"></circle><circle cx="15" cy="18" r="1.6"></circle></svg>';
+  const ICON_PLAYLIST_ADD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="14" y2="6"></line><line x1="3" y1="12" x2="14" y2="12"></line><line x1="3" y1="18" x2="10" y2="18"></line><line x1="18" y1="13" x2="18" y2="21"></line><line x1="14" y1="17" x2="22" y2="17"></line></svg>';
+
+  // The list shows either the whole library (in its custom order) or one
+  // playlist's tracks in that playlist's own order.
+  function currentPlaylist() {
+    return currentView === 'all' ? null : (playlists.find((p) => p.id === currentView) || null);
+  }
+
+  function viewTracks() {
+    const pl = currentPlaylist();
+    if (!pl) return tracks;
+    return pl.trackIds.map((id) => tracks.find((t) => t.id === id)).filter(Boolean);
+  }
+
+  let viewSelectSignature = '';
+  function renderViewSelect() {
+    if (currentView !== 'all' && !currentPlaylist()) currentView = 'all';
+    // Only rebuild the options when the set of playlists changed — this runs
+    // on every list render, and rebuilding while a native picker is open
+    // would close it.
+    const signature = playlists.map((p) => `${p.id}:${p.name}`).join('|');
+    if (signature !== viewSelectSignature) {
+      viewSelectSignature = signature;
+      viewSelect.innerHTML = '';
+      viewSelect.appendChild(new Option('All Tracks', 'all'));
+      playlists.forEach((p) => viewSelect.appendChild(new Option(p.name, String(p.id))));
+    }
+    viewSelect.value = String(currentView);
+    deletePlaylistBtn.hidden = currentView === 'all';
+  }
+
+  function savePlaylist(pl) {
+    dbPutPlaylist(pl).catch((err) => console.warn('Pulse: failed to save playlist', err));
+  }
+
+  // Edit timestamps (renames, playlist edits, deletes, track order) come from
+  // a logical clock, not raw Date.now(). The clock never runs behind any
+  // timestamp this device has seen: after receiving someone else's edit, the
+  // next local edit is guaranteed to be stamped later than it, even if this
+  // device's own clock is running slow. That keeps "the newer edit wins"
+  // right whenever one edit happened after seeing the other; only genuinely
+  // simultaneous edits fall back to the wall clocks.
+  const CLOCK_FLOOR_KEY = 'pulse:clockFloor';
+  let clockFloor = 0;
+  try { clockFloor = Number(localStorage.getItem(CLOCK_FLOOR_KEY)) || 0; } catch (err) { /* storage unavailable */ }
+
+  function raiseClockFloor(ts) {
+    if (ts <= clockFloor) return;
+    clockFloor = ts;
+    try { localStorage.setItem(CLOCK_FLOOR_KEY, String(clockFloor)); } catch (err) { /* storage unavailable */ }
+  }
+
+  function observeStamp(ts) {
+    raiseClockFloor(Number(ts) || 0);
+  }
+
+  function nextStamp() {
+    const stamp = Math.max(Date.now(), clockFloor + 1);
+    raiseClockFloor(stamp);
+    return stamp;
+  }
+
+  // True if the incoming copy should replace the local one. Equal stamps are
+  // broken by comparing content, so two devices always pick the same winner.
+  function stampWins(incomingAt, localAt, incomingKey, localKey) {
+    return incomingAt > localAt || (incomingAt === localAt && incomingAt > 0 && incomingKey > localKey);
+  }
+
+  function playlistKey(name, hashes) {
+    return `${name}|${hashes.join(',')}`;
+  }
+
+  // The whole custom track order is one newest-wins value.
+  const LIBRARY_ORDERED_AT_KEY = 'pulse:libraryOrderedAt';
+  let libraryOrderedAt = 0;
+  try { libraryOrderedAt = Number(localStorage.getItem(LIBRARY_ORDERED_AT_KEY)) || 0; } catch (err) { /* storage unavailable */ }
+
+  function setLibraryOrderedAt(ts) {
+    libraryOrderedAt = ts;
+    try { localStorage.setItem(LIBRARY_ORDERED_AT_KEY, String(ts)); } catch (err) { /* storage unavailable */ }
+  }
+
+  // Playlists sync by stable identity (uid) and track content hash, because
+  // local ids differ between devices. Deleting a playlist leaves a tombstone
+  // so the other device's older copy can't bring it back.
+  const DELETED_PLAYLISTS_KEY = 'pulse:deletedPlaylists';
+
+  function newPlaylistUid() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  }
+
+  function getPlaylistTombstones() {
+    try { return JSON.parse(localStorage.getItem(DELETED_PLAYLISTS_KEY)) || {}; } catch (err) { return {}; }
+  }
+
+  function setPlaylistTombstones(map) {
+    try { localStorage.setItem(DELETED_PLAYLISTS_KEY, JSON.stringify(map)); } catch (err) { /* storage unavailable */ }
+  }
+
+  function togglePlaylistMember(pl, track) {
+    const at = pl.trackIds.indexOf(track.id);
+    if (at >= 0) pl.trackIds.splice(at, 1); else pl.trackIds.push(track.id);
+    pl.updatedAt = nextStamp();
+    savePlaylist(pl);
+    if (playContext === pl.id) rebuildOrder();
+    renderLibrary();
+  }
+
+  async function createPlaylist(rawName) {
+    const name = rawName.trim();
+    if (!name) return false;
+    const pl = { uid: newPlaylistUid(), name, trackIds: [], updatedAt: nextStamp() };
+    let id = null;
+    try { id = await dbAddPlaylist(pl); } catch (err) { console.warn('Pulse: failed to save playlist', err); }
+    pl.id = id != null ? id : Date.now();
+    playlists.push(pl);
+    currentView = pl.id;
+    renderLibrary();
+    return true;
+  }
+
+  function deleteCurrentPlaylist() {
+    const pl = currentPlaylist();
+    if (!pl) return;
+    playlists = playlists.filter((p) => p !== pl);
+    const tombstones = getPlaylistTombstones();
+    tombstones[pl.uid] = nextStamp();
+    setPlaylistTombstones(tombstones);
+    dbDeletePlaylist(pl.id).catch((err) => console.warn('Pulse: failed to delete playlist', err));
+    currentView = 'all';
+    if (playContext === pl.id) { playContext = 'all'; rebuildOrder(); }
+    renderLibrary();
+  }
+
+  // Puts the whole library into a new order, keeping the loaded track loaded
+  // and the play queue pointing at the same tracks.
+  function setLibrarySequence(seq) {
+    const before = tracks.slice();
+    const current = tracks[trackIndex];
+    tracks.splice(0, tracks.length, ...seq);
+    trackIndex = Math.max(0, tracks.indexOf(current));
+    tracks.forEach((t, i) => { t.order = i; });
+    dbSetOrders(tracks.filter((t) => t.id != null).map((t) => ({ id: t.id, order: t.order }))).catch((err) => {
+      console.warn('Pulse: failed to save track order', err);
+    });
+    if (playContext === 'all' && !shuffleBtn.classList.contains('toggled')) {
+      rebuildOrder();
+    } else {
+      // The queue holds indices into `tracks`, which just moved underneath it.
+      playOrder = playOrder.map((i) => tracks.indexOf(before[i]));
+      orderPos = playOrder.indexOf(trackIndex);
+    }
+  }
+
+  // Applies a zip's order.json. Returns true if the on-screen order changed.
+  async function mergeLibraryOrder(data) {
+    const at = Number(data && data.at) || 0;
+    const hashes = Array.isArray(data && data.tracks) ? data.tracks.filter((h) => typeof h === 'string') : [];
+    observeStamp(at);
+    if (!at || !hashes.length) return false;
+
+    const byHash = new Map();
+    for (const t of tracks) {
+      const hash = await ensureTrackHash(t);
+      if (hash && !byHash.has(hash)) byHash.set(hash, t);
+    }
+    // Their order first; anything they don't have (added here since) after.
+    const seq = [];
+    const used = new Set();
+    hashes.forEach((h) => {
+      const t = byHash.get(h);
+      if (t && !used.has(t)) { seq.push(t); used.add(t); }
+    });
+    tracks.forEach((t) => { if (!used.has(t)) seq.push(t); });
+
+    const localKey = tracks.map((t) => t.hash || '').join(',');
+    if (!stampWins(at, libraryOrderedAt, hashes.join(','), localKey)) return false;
+    setLibraryOrderedAt(at);
+    const changed = seq.some((t, i) => t !== tracks[i]);
+    if (changed) setLibrarySequence(seq);
+    return changed;
+  }
+
+  // Moves one track within whatever list is on screen. toIndex is the track's
+  // position in the resulting list.
+  function reorderVisible(track, toIndex) {
+    const visible = viewTracks();
+    const from = visible.indexOf(track);
+    if (from < 0 || toIndex === from) return;
+    const seq = visible.filter((t) => t !== track);
+    seq.splice(toIndex, 0, track);
+
+    const pl = currentPlaylist();
+    if (pl) {
+      pl.trackIds = seq.map((t) => t.id);
+      pl.updatedAt = nextStamp();
+      savePlaylist(pl);
+      if (playContext === pl.id) rebuildOrder();
+    } else {
+      setLibrarySequence(seq);
+      setLibraryOrderedAt(nextStamp());
+    }
+    renderLibrary();
+  }
+
+  // ---- drag to reorder ----------------------------------------------------
+  // Pointer events on the handle rather than the HTML5 drag-and-drop API:
+  // that API doesn't fire from touch on iPhone, which is where this is used.
+  let drag = null;
+  let renderDeferred = false;
+
+  function updateDropTarget() {
+    const rows = [...libraryList.querySelectorAll('.lib-row[data-track-id]')].filter((r) => r !== drag.row);
+    rows.forEach((r) => r.classList.remove('drop-before', 'drop-after'));
+    drag.target = null;
+    if (!rows.length) return;
+    const y = drag.lastY;
+    const next = rows.find((r) => {
+      const rect = r.getBoundingClientRect();
+      return y < rect.top + rect.height / 2;
+    });
+    if (next) { drag.target = next; drag.before = true; next.classList.add('drop-before'); }
+    else { drag.target = rows[rows.length - 1]; drag.before = false; drag.target.classList.add('drop-after'); }
+  }
+
+  function positionDraggedRow() {
+    const dy = (drag.lastY - drag.startY) + (libraryList.scrollTop - drag.startScroll);
+    drag.row.style.transform = `translateY(${dy}px)`;
+  }
+
+  // Keeps scrolling the list while the pointer rests near its top/bottom edge.
+  function dragAutoScroll() {
+    if (!drag) return;
+    const rect = libraryList.getBoundingClientRect();
+    const edge = 28;
+    let step = 0;
+    if (drag.lastY < rect.top + edge) step = -10;
+    else if (drag.lastY > rect.bottom - edge) step = 10;
+    if (step) {
+      libraryList.scrollTop += step;
+      positionDraggedRow();
+      updateDropTarget();
+    }
+    drag.raf = requestAnimationFrame(dragAutoScroll);
+  }
+
+  function startDrag(e, track, row, handle) {
+    if (e.button != null && e.button !== 0) return;
+    e.preventDefault();
+    if (menuTrack) {
+      menuTrack = null;
+      libraryList.querySelectorAll('.lib-row-menu').forEach((n) => n.remove());
+    }
+    try { handle.setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointer */ }
+    drag = { track, row, handle, startY: e.clientY, lastY: e.clientY, startScroll: libraryList.scrollTop, target: null, before: true, raf: 0 };
+    row.classList.add('dragging');
+    document.body.classList.add('is-dragging');
+    handle.addEventListener('pointermove', onDragMove);
+    handle.addEventListener('pointerup', onDragEnd);
+    handle.addEventListener('pointercancel', onDragCancel);
+    drag.raf = requestAnimationFrame(dragAutoScroll);
+  }
+
+  function onDragMove(e) {
+    if (!drag) return;
+    drag.lastY = e.clientY;
+    positionDraggedRow();
+    updateDropTarget();
+  }
+
+  function finishDrag() {
+    const { row, handle, raf } = drag;
+    cancelAnimationFrame(raf);
+    handle.removeEventListener('pointermove', onDragMove);
+    handle.removeEventListener('pointerup', onDragEnd);
+    handle.removeEventListener('pointercancel', onDragCancel);
+    row.classList.remove('dragging');
+    row.style.transform = '';
+    libraryList.querySelectorAll('.drop-before, .drop-after').forEach((r) => r.classList.remove('drop-before', 'drop-after'));
+    document.body.classList.remove('is-dragging');
+    const finished = drag;
+    drag = null;
+    return finished;
+  }
+
+  function onDragEnd() {
+    if (!drag) return;
+    const { track, target, before } = finishDrag();
+    if (target) {
+      const others = viewTracks().filter((t) => t !== track);
+      const at = others.indexOf(target._track);
+      if (at >= 0) reorderVisible(track, at + (before ? 0 : 1));
+    }
+    if (renderDeferred) { renderDeferred = false; renderLibrary(); }
+  }
+
+  function onDragCancel() {
+    if (!drag) return;
+    finishDrag();
+    if (renderDeferred) { renderDeferred = false; renderLibrary(); }
+  }
+
+  function moveByKey(track, delta) {
+    const visible = viewTracks();
+    const from = visible.indexOf(track);
+    const to = from + delta;
+    if (from < 0 || to < 0 || to >= visible.length) return;
+    reorderVisible(track, to);
+    const handle = libraryList.querySelector(`.lib-row[data-track-id="${track.id}"] .lib-row-handle`);
+    if (handle) handle.focus();
+  }
+
+  function makeHandle(track, row) {
+    const handle = document.createElement('button');
+    handle.type = 'button';
+    handle.className = 'lib-row-handle';
+    handle.title = 'Drag to reorder';
+    handle.setAttribute('aria-label', `Reorder ${track.title} — drag, or press the up and down arrow keys`);
+    handle.innerHTML = ICON_HANDLE;
+    handle.addEventListener('pointerdown', (e) => startDrag(e, track, row, handle));
+    handle.addEventListener('click', (e) => e.stopPropagation());
+    handle.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        moveByKey(track, e.key === 'ArrowUp' ? -1 : 1);
+      }
+    });
+    return handle;
+  }
+
+  function buildPlaylistMenu(track) {
+    const menu = document.createElement('div');
+    menu.className = 'lib-row-menu';
+    if (!playlists.length) {
+      const msg = document.createElement('p');
+      msg.className = 'lib-menu-empty';
+      msg.textContent = 'No playlists yet — make one with the + above.';
+      menu.appendChild(msg);
+      return menu;
+    }
+    playlists.forEach((pl) => {
+      const member = pl.trackIds.includes(track.id);
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'lib-menu-item' + (member ? ' member' : '');
+      item.textContent = (member ? '✓ ' : '') + pl.name;
+      item.setAttribute('aria-pressed', member ? 'true' : 'false');
+      item.title = member ? `Remove from ${pl.name}` : `Add to ${pl.name}`;
+      item.addEventListener('click', () => togglePlaylistMember(pl, track));
+      menu.appendChild(item);
+    });
+    return menu;
+  }
+
   function renderLibrary() {
     libCountEl.textContent = `${tracks.length} track${tracks.length === 1 ? '' : 's'}`;
+    // A drag owns the list DOM until it ends (auto-advance and friends also
+    // call this); the pending render runs when the drag finishes.
+    if (drag) { renderDeferred = true; return; }
+    renderViewSelect();
+
     // Other code paths re-render this list (adding a track, auto-advance);
     // remember which edit field had focus so a re-render doesn't drop it.
     const focusedEl = document.activeElement;
@@ -750,24 +1140,37 @@
     libraryList.innerHTML = '';
 
     if (editingTrack && !tracks.includes(editingTrack)) editingTrack = null;
+    if (menuTrack && !tracks.includes(menuTrack)) menuTrack = null;
 
-    if (!tracks.length) {
+    const pl = currentPlaylist();
+    const visible = viewTracks();
+
+    if (!visible.length) {
       const empty = document.createElement('p');
       empty.className = 'lib-empty';
-      empty.textContent = 'No tracks yet — use the + or folder button above, or drop mp3 files anywhere on the page.';
+      empty.textContent = pl
+        ? 'No tracks in this playlist yet — switch to All Tracks and use the playlist button on a track to add it.'
+        : 'No tracks yet — use the + or folder button above, or drop mp3 files anywhere on the page.';
       libraryList.appendChild(empty);
       return;
     }
 
-    tracks.forEach((track, i) => {
+    visible.forEach((track) => {
+      const i = tracks.indexOf(track);
       const row = document.createElement('div');
       row.className = 'lib-row' + (i === trackIndex ? ' active' : '');
+      row.dataset.trackId = track.id == null ? '' : track.id;
+      row._track = track;
 
       if (track === editingTrack) {
         buildEditRow(row);
         libraryList.appendChild(row);
         return;
       }
+
+      // Only tracks persisted to IndexedDB (they have an id) can be renamed,
+      // reordered, or put in playlists.
+      if (track.id != null) row.appendChild(makeHandle(track, row));
 
       const main = document.createElement('button');
       main.type = 'button';
@@ -784,30 +1187,40 @@
       main.appendChild(titleSpan);
       main.appendChild(artistSpan);
       main.addEventListener('click', () => {
+        // Next/previous/auto-advance follow the list this track was started from.
+        if (playContext !== currentView) { playContext = currentView; rebuildOrder(); }
         switchTrack(i, true);
         closeLibrary();
       });
-
-      const removeBtn = document.createElement('button');
-      removeBtn.type = 'button';
-      removeBtn.className = 'lib-row-remove';
-      removeBtn.setAttribute('aria-label', `Remove ${track.title}`);
-      removeBtn.textContent = '×';
-      removeBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        removeTrack(i);
-      });
-
       row.appendChild(main);
-      // Only tracks persisted to IndexedDB (they have an id) are renameable.
+
       if (track.id != null) {
+        row.appendChild(makeIconButton('lib-row-icon-btn', `Playlists for ${track.title}`, ICON_PLAYLIST_ADD, (e) => {
+          e.stopPropagation();
+          menuTrack = menuTrack === track ? null : track;
+          renderLibrary();
+        }));
         row.appendChild(makeIconButton('lib-row-icon-btn', `Rename ${track.title}`, ICON_PENCIL, (e) => {
           e.stopPropagation();
           startEdit(track);
         }));
       }
+
+      // In a playlist the × takes a track out of the playlist only; in All
+      // Tracks it deletes the track from the library.
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'lib-row-remove';
+      removeBtn.setAttribute('aria-label', pl ? `Remove ${track.title} from ${pl.name}` : `Remove ${track.title}`);
+      removeBtn.textContent = '×';
+      removeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (pl) togglePlaylistMember(pl, track); else removeTrack(i);
+      });
       row.appendChild(removeBtn);
       libraryList.appendChild(row);
+
+      if (track === menuTrack) libraryList.appendChild(buildPlaylistMenu(track));
     });
 
     if (focusedField) {
@@ -818,6 +1231,48 @@
       }
     }
   }
+
+  viewSelect.addEventListener('change', () => {
+    const v = viewSelect.value;
+    currentView = v === 'all' ? 'all' : Number(v);
+    menuTrack = null;
+    renderLibrary();
+  });
+
+  newPlaylistBtn.addEventListener('click', () => {
+    newPlaylistForm.hidden = !newPlaylistForm.hidden;
+    if (!newPlaylistForm.hidden) { newPlaylistName.value = ''; newPlaylistName.focus(); }
+  });
+  newPlaylistCancel.addEventListener('click', () => { newPlaylistForm.hidden = true; });
+  newPlaylistName.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.stopPropagation(); newPlaylistForm.hidden = true; }
+  });
+  newPlaylistForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (await createPlaylist(newPlaylistName.value)) newPlaylistForm.hidden = true;
+  });
+
+  // Deleting a playlist takes two clicks (the second within 3s), instead of
+  // a native confirm() dialog, which webviews handle inconsistently.
+  let deleteArmTimer = null;
+  deletePlaylistBtn.addEventListener('click', () => {
+    if (deleteArmTimer) {
+      clearTimeout(deleteArmTimer);
+      deleteArmTimer = null;
+      deletePlaylistBtn.classList.remove('lib-delete-armed');
+      deletePlaylistBtn.textContent = '';
+      deletePlaylistBtn.innerHTML = ICON_TRASH;
+      deleteCurrentPlaylist();
+      return;
+    }
+    deletePlaylistBtn.classList.add('lib-delete-armed');
+    deletePlaylistBtn.textContent = 'Delete?';
+    deleteArmTimer = setTimeout(() => {
+      deleteArmTimer = null;
+      deletePlaylistBtn.classList.remove('lib-delete-armed');
+      deletePlaylistBtn.innerHTML = ICON_TRASH;
+    }, 3000);
+  });
 
   const ICON_PENCIL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>';
   const ICON_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
@@ -917,7 +1372,7 @@
     if (changed) {
       track.title = title;
       track.artist = artist;
-      track.renamedAt = Date.now();
+      track.renamedAt = nextStamp();
       if (tracks[trackIndex] === track) setNowPlayingUI(track);
     }
     renderLibrary();
@@ -943,6 +1398,10 @@
     if (removed.id != null) {
       dbDeleteTrack(removed.id).catch((err) => {
         console.warn('Pulse: failed to delete track from storage', err);
+      });
+      playlists.forEach((pl) => {
+        const at = pl.trackIds.indexOf(removed.id);
+        if (at >= 0) { pl.trackIds.splice(at, 1); savePlaylist(pl); }
       });
     }
 
@@ -997,20 +1456,30 @@
 
   const DB_NAME = 'pulse-player';
   const STORE_NAME = 'tracks';
+  const PLAYLIST_STORE = 'playlists';
   let dbPromise = null;
 
   function getDB() {
     if (!dbPromise) {
       dbPromise = new Promise((resolve, reject) => {
         if (!window.indexedDB) { reject(new Error('indexedDB unavailable')); return; }
-        const req = indexedDB.open(DB_NAME, 1);
+        const req = indexedDB.open(DB_NAME, 2);
         req.onupgradeneeded = () => {
-          if (!req.result.objectStoreNames.contains(STORE_NAME)) {
-            req.result.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
+          const db = req.result;
+          if (!db.objectStoreNames.contains(STORE_NAME)) {
+            db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
+          }
+          if (!db.objectStoreNames.contains(PLAYLIST_STORE)) {
+            db.createObjectStore(PLAYLIST_STORE, { keyPath: 'id', autoIncrement: true });
           }
         };
-        req.onsuccess = () => resolve(req.result);
+        req.onsuccess = () => {
+          // If a newer version ever needs to upgrade this database, get out of its way.
+          req.result.onversionchange = () => { req.result.close(); dbPromise = null; };
+          resolve(req.result);
+        };
         req.onerror = () => reject(req.error);
+        req.onblocked = () => console.warn('Pulse: a database upgrade is waiting for other open Pulse tabs to close');
       }).catch((err) => {
         console.warn('Pulse: library persistence unavailable', err);
         return null;
@@ -1069,9 +1538,71 @@
     });
   }
 
+  // Writes the custom sort position for many tracks in one transaction.
+  async function dbSetOrders(pairs) {
+    const db = await getDB();
+    if (!db) return;
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      pairs.forEach(({ id, order }) => {
+        const getReq = store.get(id);
+        getReq.onsuccess = () => { if (getReq.result) store.put({ ...getReq.result, order }); };
+      });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  }
+
+  async function dbGetAllPlaylists() {
+    const db = await getDB();
+    if (!db) return [];
+    return new Promise((resolve, reject) => {
+      const req = db.transaction(PLAYLIST_STORE, 'readonly').objectStore(PLAYLIST_STORE).getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function dbAddPlaylist(playlist) {
+    const db = await getDB();
+    if (!db) return null;
+    return new Promise((resolve, reject) => {
+      const req = db.transaction(PLAYLIST_STORE, 'readwrite').objectStore(PLAYLIST_STORE).add({ uid: playlist.uid, name: playlist.name, trackIds: playlist.trackIds, updatedAt: playlist.updatedAt || 0 });
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function dbPutPlaylist(playlist) {
+    const db = await getDB();
+    if (!db) return;
+    return new Promise((resolve, reject) => {
+      const req = db.transaction(PLAYLIST_STORE, 'readwrite').objectStore(PLAYLIST_STORE).put({ id: playlist.id, uid: playlist.uid, name: playlist.name, trackIds: playlist.trackIds, updatedAt: playlist.updatedAt || 0 });
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function dbDeletePlaylist(id) {
+    const db = await getDB();
+    if (!db) return;
+    return new Promise((resolve, reject) => {
+      const req = db.transaction(PLAYLIST_STORE, 'readwrite').objectStore(PLAYLIST_STORE).delete(id);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  }
+
   // Guards against re-adding the same file twice (e.g. dropping the same
   // folder again in a later session, once it's already persisted).
   const knownFileKeys = new Set();
+
+  // Position for a newly added track: after everything already in the library.
+  function nextOrder() {
+    return tracks.reduce((max, t) => Math.max(max, t.order == null ? -1 : t.order), -1) + 1;
+  }
 
   async function addFiles(fileList) {
     const files = Array.from(fileList || []).filter(isAudioFile);
@@ -1091,12 +1622,12 @@
       const artist = (tags && tags.artist) || fallback.artist;
 
       const mood = pickMood(title, artist);
-      const track = { id: null, title, artist, mood, name: file.name, size: file.size, url: URL.createObjectURL(file) };
+      const track = { id: null, title, artist, mood, name: file.name, size: file.size, url: URL.createObjectURL(file), order: nextOrder() };
       tracks.push(track);
       added = true;
       renderLibrary();
 
-      dbAddTrack({ title, artist, mood, name: file.name, size: file.size, type: file.type, data: file })
+      dbAddTrack({ title, artist, mood, name: file.name, size: file.size, type: file.type, data: file, order: track.order })
         .then((id) => {
           track.id = id;
           if (id != null && tracks[trackIndex] === track) {
@@ -1121,10 +1652,30 @@
     } catch (err) {
       records = [];
     }
-    records.forEach((rec) => {
+    // Custom order first; tracks without one (added before reordering
+    // existed) sort after them, in the order they were added.
+    records.sort((a, b) => ((a.order ?? Infinity) - (b.order ?? Infinity)) || (a.id - b.id));
+    const needsOrder = records.some((rec) => rec.order == null);
+    records.forEach((rec, i) => {
       knownFileKeys.add(`${rec.name}:${rec.size}`);
       const mood = rec.mood || pickMood(rec.title, rec.artist);
-      tracks.push({ id: rec.id, title: rec.title, artist: rec.artist, mood, name: rec.name, size: rec.size, url: URL.createObjectURL(rec.data), hash: rec.hash || null, renamedAt: rec.renamedAt || 0 });
+      tracks.push({ id: rec.id, title: rec.title, artist: rec.artist, mood, name: rec.name, size: rec.size, url: URL.createObjectURL(rec.data), hash: rec.hash || null, renamedAt: rec.renamedAt || 0, order: needsOrder ? i : rec.order });
+    });
+    if (needsOrder && records.length) {
+      dbSetOrders(records.map((rec, i) => ({ id: rec.id, order: i }))).catch(() => {});
+    }
+
+    try {
+      playlists = await dbGetAllPlaylists();
+    } catch (err) {
+      playlists = [];
+    }
+    // Playlists made before sync existed have no stable identity or timestamp yet.
+    playlists.forEach((pl) => {
+      let dirty = false;
+      if (!pl.uid) { pl.uid = newPlaylistUid(); dirty = true; }
+      if (pl.updatedAt == null) { pl.updatedAt = 0; dirty = true; }
+      if (dirty) savePlaylist(pl);
     });
   }
 
@@ -1162,6 +1713,7 @@
   async function buildLibraryZip() {
     const records = await dbGetAllTracks();
     if (!records.length) return null;
+    records.sort((a, b) => ((a.order ?? Infinity) - (b.order ?? Infinity)) || (a.id - b.id));
 
     // Every exported track carries its content hash so the receiving device
     // can recognise it (even under a different name) without reading it.
@@ -1191,6 +1743,26 @@
       };
     });
     zip.file('metadata.json', JSON.stringify(metadata, null, 2));
+
+    // Playlists live in their own file (older versions ignore it), and refer to
+    // tracks by content hash since local ids differ between devices.
+    const hashById = new Map(records.filter((r) => r.hash).map((r) => [r.id, r.hash]));
+    const deleted = Object.entries(getPlaylistTombstones()).map(([uid, deletedAt]) => ({ uid, deletedAt }));
+    if (playlists.length || deleted.length) {
+      zip.file('playlists.json', JSON.stringify({
+        playlists: playlists.map((pl) => ({
+          uid: pl.uid,
+          name: pl.name,
+          updatedAt: pl.updatedAt || 0,
+          tracks: pl.trackIds.map((id) => hashById.get(id)).filter(Boolean),
+        })),
+        deleted,
+      }));
+    }
+    // The custom track order, by hash, only if it was ever deliberately set.
+    if (libraryOrderedAt > 0) {
+      zip.file('order.json', JSON.stringify({ at: libraryOrderedAt, tracks: records.map((r) => r.hash).filter(Boolean) }));
+    }
     return zip.generateAsync({ type: 'blob' });
   }
 
@@ -1246,7 +1818,77 @@
     return track.hash || null;
   }
 
-  // Returns { imported, renamed } on success, null if the file was unreadable.
+  // Folds a zip's playlists.json into the local playlists. Same rule as track
+  // renames: the more recently edited copy of a playlist wins, so a stale
+  // snapshot can't undo a newer edit, and a delete beats any older copy.
+  // Returns how many local playlists were created, changed, or removed.
+  async function mergePlaylists(data) {
+    const incoming = Array.isArray(data && data.playlists) ? data.playlists : [];
+    const incomingDeleted = Array.isArray(data && data.deleted) ? data.deleted : [];
+    const tombstones = getPlaylistTombstones();
+    let changed = 0;
+
+    for (const d of incomingDeleted) {
+      if (!d || !d.uid) continue;
+      const deletedAt = Number(d.deletedAt) || 0;
+      observeStamp(deletedAt);
+      const local = playlists.find((p) => p.uid === d.uid);
+      if (local && deletedAt > (local.updatedAt || 0)) {
+        playlists = playlists.filter((p) => p !== local);
+        dbDeletePlaylist(local.id).catch((err) => console.warn('Pulse: failed to delete playlist', err));
+        if (currentView === local.id) currentView = 'all';
+        if (playContext === local.id) { playContext = 'all'; rebuildOrder(); }
+        changed++;
+      }
+      if (deletedAt > (tombstones[d.uid] || 0)) tombstones[d.uid] = deletedAt;
+    }
+
+    if (incoming.length) {
+      const idByHash = new Map();
+      const hashById = new Map();
+      for (const t of tracks) {
+        const hash = await ensureTrackHash(t);
+        if (hash && t.id != null) { idByHash.set(hash, t.id); hashById.set(t.id, hash); }
+      }
+
+      for (const inc of incoming) {
+        if (!inc || !inc.uid || typeof inc.name !== 'string') continue;
+        const updatedAt = Number(inc.updatedAt) || 0;
+        observeStamp(updatedAt);
+        if (tombstones[inc.uid] && tombstones[inc.uid] >= updatedAt) continue;   // deleted more recently than this copy was edited
+        delete tombstones[inc.uid];                                              // a newer edit supersedes an old delete
+
+        const trackIds = (Array.isArray(inc.tracks) ? inc.tracks : []).map((h) => idByHash.get(h)).filter((id) => id != null);
+        const local = playlists.find((p) => p.uid === inc.uid);
+
+        if (!local) {
+          const pl = { uid: inc.uid, name: inc.name, trackIds, updatedAt };
+          let id = null;
+          try { id = await dbAddPlaylist(pl); } catch (err) { console.warn('Pulse: failed to save playlist', err); }
+          pl.id = id != null ? id : Date.now() + playlists.length;
+          playlists.push(pl);
+          changed++;
+        } else if (stampWins(
+          updatedAt,
+          local.updatedAt || 0,
+          playlistKey(inc.name, Array.isArray(inc.tracks) ? inc.tracks : []),
+          playlistKey(local.name, local.trackIds.map((id) => hashById.get(id)).filter(Boolean))
+        )) {
+          local.name = inc.name;
+          local.trackIds = trackIds;
+          local.updatedAt = updatedAt;
+          savePlaylist(local);
+          if (playContext === local.id) rebuildOrder();
+          changed++;
+        }
+      }
+    }
+
+    setPlaylistTombstones(tombstones);
+    return changed;
+  }
+
+  // Returns { imported, renamed, playlists } on success, null if the file was unreadable.
   // A track that's already here (same audio) is never duplicated; if the
   // incoming copy was renamed more recently than the local one, the newer
   // name wins, so a stale snapshot can't undo a newer rename either.
@@ -1300,8 +1942,9 @@
 
         if (match) {
           const incomingAt = Number(entry.renamedAt) || 0;
+          observeStamp(incomingAt);
           const nameChanged = entry.title !== match.title || entry.artist !== match.artist;
-          if (nameChanged && incomingAt > (match.renamedAt || 0)) {
+          if (nameChanged && stampWins(incomingAt, match.renamedAt || 0, `${entry.title}|${entry.artist}`, `${match.title}|${match.artist}`)) {
             match.title = entry.title;
             match.artist = entry.artist;
             match.renamedAt = incomingAt;
@@ -1320,7 +1963,9 @@
         if (!blob) continue;
         const mood = entry.mood || pickMood(entry.title, entry.artist);
         const renamedAt = Number(entry.renamedAt) || 0;
+        observeStamp(renamedAt);
 
+        const order = nextOrder();
         const id = await dbAddTrack({
           title: entry.title,
           artist: entry.artist,
@@ -1331,14 +1976,35 @@
           data: blob,
           hash,
           renamedAt,
+          order,
         });
 
         knownFileKeys.add(`${entry.filename}:${blob.size}`);
-        tracks.push({ id, title: entry.title, artist: entry.artist, mood, name: entry.filename, size: blob.size, url: URL.createObjectURL(blob), hash, renamedAt });
+        tracks.push({ id, title: entry.title, artist: entry.artist, mood, name: entry.filename, size: blob.size, url: URL.createObjectURL(blob), hash, renamedAt, order });
         importedCount++;
       }
 
-      if (importedCount || renamedCount) {
+      let playlistChanges = 0;
+      const playlistsEntry = zip.file('playlists.json');
+      if (playlistsEntry) {
+        try {
+          playlistChanges = await mergePlaylists(JSON.parse(await playlistsEntry.async('string')));
+        } catch (err) {
+          console.warn('Pulse: could not read the playlists in that library', err);
+        }
+      }
+
+      let orderChanged = false;
+      const orderEntry = zip.file('order.json');
+      if (orderEntry) {
+        try {
+          orderChanged = await mergeLibraryOrder(JSON.parse(await orderEntry.async('string')));
+        } catch (err) {
+          console.warn('Pulse: could not read the track order in that library', err);
+        }
+      }
+
+      if (importedCount || renamedCount || playlistChanges || orderChanged) {
         rebuildOrder();
         renderLibrary();
         if (wasEmpty && importedCount) hardSwitch(0, false);
@@ -1346,7 +2012,7 @@
       } else if (!quiet) {
         alert('Nothing new to import — those tracks are already in your library.');
       }
-      return { imported: importedCount, renamed: renamedCount };
+      return { imported: importedCount, renamed: renamedCount, playlists: playlistChanges, reordered: orderChanged };
     } catch (err) {
       console.warn('Pulse: import failed', err);
       alert('Import failed — that file may not be a valid Pulse library export.');
@@ -1547,6 +2213,8 @@
       const parts = [];
       if (result.imported) parts.push(`${result.imported} new track${result.imported === 1 ? '' : 's'}`);
       if (result.renamed) parts.push(`${result.renamed} renamed`);
+      if (result.reordered) parts.push('track order updated');
+      if (result.playlists) parts.push(`${result.playlists} playlist${result.playlists === 1 ? '' : 's'} updated`);
       setSyncStatus(parts.length ? `Synced: ${parts.join(', ')}.` : 'Already up to date.');
     } catch (err) {
       console.warn('Pulse: sync download failed', err);
