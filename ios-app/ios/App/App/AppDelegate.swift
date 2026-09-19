@@ -1,4 +1,5 @@
 import UIKit
+import AVFoundation
 import Capacitor
 
 @UIApplicationMain
@@ -7,7 +8,16 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        // Music has to keep playing with the screen locked or the app in the
+        // background, which needs the .playback category (paired with the
+        // "audio" UIBackgroundModes entry in Info.plist). Only the category is
+        // set here — not activated — so other apps' audio isn't interrupted
+        // until Pulse actually starts playing.
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+        } catch {
+            print("Pulse: could not configure audio session: \(error)")
+        }
         return true
     }
 
