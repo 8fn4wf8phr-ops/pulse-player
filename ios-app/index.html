@@ -40,27 +40,30 @@
 
     <div class="settings-panel" id="settingsPanel">
       <div class="settings-inner">
-        <p class="settings-heading">Playback</p>
-        <div class="settings-row">
-          <span class="settings-label">Crossfade</span>
-          <button class="btn settings-toggle" id="crossfadeBtn" aria-label="Toggle crossfade between tracks" aria-pressed="false">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12c2.5-5 5-5 7 0s4.5 5 7 0 4.5-5 6-2"></path></svg>
-          </button>
-        </div>
+        <div class="settings-group" id="audioFxSettings">
+          <p class="settings-heading">Playback</p>
+          <div class="settings-row">
+            <span class="settings-label">Crossfade</span>
+            <button class="btn settings-toggle" id="crossfadeBtn" aria-label="Toggle crossfade between tracks" aria-pressed="false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12c2.5-5 5-5 7 0s4.5 5 7 0 4.5-5 6-2"></path></svg>
+            </button>
+          </div>
 
-        <p class="settings-heading">Equalizer</p>
-        <div class="settings-row">
-          <span class="settings-label">Bass</span>
-          <input type="range" class="eq-slider" id="eqBass" min="-12" max="12" step="1" value="0" aria-label="Bass">
+          <p class="settings-heading">Equalizer</p>
+          <div class="settings-row">
+            <span class="settings-label">Bass</span>
+            <input type="range" class="eq-slider" id="eqBass" min="-12" max="12" step="1" value="0" aria-label="Bass">
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">Mid</span>
+            <input type="range" class="eq-slider" id="eqMid" min="-12" max="12" step="1" value="0" aria-label="Mid">
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">Treble</span>
+            <input type="range" class="eq-slider" id="eqTreble" min="-12" max="12" step="1" value="0" aria-label="Treble">
+          </div>
         </div>
-        <div class="settings-row">
-          <span class="settings-label">Mid</span>
-          <input type="range" class="eq-slider" id="eqMid" min="-12" max="12" step="1" value="0" aria-label="Mid">
-        </div>
-        <div class="settings-row">
-          <span class="settings-label">Treble</span>
-          <input type="range" class="eq-slider" id="eqTreble" min="-12" max="12" step="1" value="0" aria-label="Treble">
-        </div>
+        <p class="settings-note settings-note-block" id="iosAudioNote" hidden>Equalizer and crossfade aren't available on iOS — playing audio directly is what lets music keep going with the screen locked.</p>
 
         <p class="settings-heading">Library</p>
         <div class="settings-row">

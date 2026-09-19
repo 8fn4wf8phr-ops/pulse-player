@@ -147,7 +147,12 @@
   // Web Audio graph can only be created after a user gesture, and
   // createMediaElementSource can only ever be called once per <audio> element.
   function setupAudioGraph() {
-    if (audioCtx) return;
+    // iOS keeps music playing with the screen locked (and rides out route
+    // changes like unplugging headphones) only when the <audio> element plays
+    // straight to the system. Routing it through Web Audio gets it cut off,
+    // so there's deliberately no graph on iOS — and so no EQ, crossfade, or
+    // analyser there. Everything below tolerates audioCtx being undefined.
+    if (audioCtx || IS_IOS) return;
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     analyser = audioCtx.createAnalyser();
     analyser.fftSize = 128;
@@ -306,7 +311,12 @@
   function updateMediaSessionMetadata(track) {
     if (!('mediaSession' in navigator)) return;
     navigator.mediaSession.metadata = track
-      ? new MediaMetadata({ title: track.title, artist: track.artist })
+      ? new MediaMetadata({
+          title: track.title,
+          artist: track.artist,
+          album: 'Pulse',
+          artwork: [{ src: 'icon-512.png', sizes: '512x512', type: 'image/png' }],
+        })
       : null;
   }
 
@@ -429,7 +439,7 @@
   playBtn.addEventListener('click', () => {
     if (!tracks.length) { addFilesBtn.click(); return; }
     setupAudioGraph();
-    if (audioCtx.state === 'suspended') audioCtx.resume();
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
     const el = activeEl();
     if (isPlaying) {
       el.pause();
@@ -454,6 +464,7 @@
 
     const remaining = el.duration - el.currentTime;
     if (
+      audioCtx &&
       crossfadeBtn.classList.contains('toggled') &&
       !crossfadeInProgress &&
       !repeatBtn.classList.contains('toggled') &&
@@ -489,12 +500,19 @@
 
   // Lets the OS/browser media notification show track info and respond to
   // hardware media keys (headphones, lock screen, etc).
+  //
+  // play/pause must be idempotent, not a toggle: the OS can send "pause" for
+  // something the audio element already paused on its own (unplugging
+  // headphones), and toggling that would start the music back up.
+  function handleMediaPlay() { if (!isPlaying) playBtn.click(); }
+  function handleMediaPause() { if (isPlaying) playBtn.click(); }
+
   if ('mediaSession' in navigator) {
     const setHandler = (action, handler) => {
       try { navigator.mediaSession.setActionHandler(action, handler); } catch (err) { /* unsupported action */ }
     };
-    setHandler('play', () => playBtn.click());
-    setHandler('pause', () => playBtn.click());
+    setHandler('play', handleMediaPlay);
+    setHandler('pause', handleMediaPause);
     setHandler('previoustrack', () => prevBtn.click());
     setHandler('nexttrack', () => nextBtn.click());
     setHandler('seekto', (details) => {
@@ -547,6 +565,8 @@
   if (IS_IOS) {
     volumeSlider.hidden = true;
     document.getElementById('volumeIosNote').hidden = false;
+    document.getElementById('audioFxSettings').hidden = true;
+    document.getElementById('iosAudioNote').hidden = false;
   }
 
   function applyVolume() {

@@ -202,6 +202,9 @@
   }
   .lib-row-edit-error { margin: 0; font-size: 11px; color: var(--accent); }
 
+  .settings-group { display: flex; flex-direction: column; gap: 20px; }
+  .settings-note-block { margin: 0; }
+
   .volume-ios-note {
     flex: 1;
     font-size: 12px;

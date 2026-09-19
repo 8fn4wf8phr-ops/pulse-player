@@ -212,6 +212,9 @@
   }
   .lib-row-edit-error { margin: 0; font-size: 11px; color: var(--accent); }
 
+  .settings-group { display: flex; flex-direction: column; gap: 20px; }
+  .settings-note-block { margin: 0; }
+
   .volume-ios-note {
     flex: 1;
     font-size: 12px;
@@ -567,27 +570,30 @@
 
     <div class="settings-panel" id="settingsPanel">
       <div class="settings-inner">
-        <p class="settings-heading">Playback</p>
-        <div class="settings-row">
-          <span class="settings-label">Crossfade</span>
-          <button class="btn settings-toggle" id="crossfadeBtn" aria-label="Toggle crossfade between tracks" aria-pressed="false">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12c2.5-5 5-5 7 0s4.5 5 7 0 4.5-5 6-2"></path></svg>
-          </button>
-        </div>
+        <div class="settings-group" id="audioFxSettings">
+          <p class="settings-heading">Playback</p>
+          <div class="settings-row">
+            <span class="settings-label">Crossfade</span>
+            <button class="btn settings-toggle" id="crossfadeBtn" aria-label="Toggle crossfade between tracks" aria-pressed="false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12c2.5-5 5-5 7 0s4.5 5 7 0 4.5-5 6-2"></path></svg>
+            </button>
+          </div>
 
-        <p class="settings-heading">Equalizer</p>
-        <div class="settings-row">
-          <span class="settings-label">Bass</span>
-          <input type="range" class="eq-slider" id="eqBass" min="-12" max="12" step="1" value="0" aria-label="Bass">
+          <p class="settings-heading">Equalizer</p>
+          <div class="settings-row">
+            <span class="settings-label">Bass</span>
+            <input type="range" class="eq-slider" id="eqBass" min="-12" max="12" step="1" value="0" aria-label="Bass">
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">Mid</span>
+            <input type="range" class="eq-slider" id="eqMid" min="-12" max="12" step="1" value="0" aria-label="Mid">
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">Treble</span>
+            <input type="range" class="eq-slider" id="eqTreble" min="-12" max="12" step="1" value="0" aria-label="Treble">
+          </div>
         </div>
-        <div class="settings-row">
-          <span class="settings-label">Mid</span>
-          <input type="range" class="eq-slider" id="eqMid" min="-12" max="12" step="1" value="0" aria-label="Mid">
-        </div>
-        <div class="settings-row">
-          <span class="settings-label">Treble</span>
-          <input type="range" class="eq-slider" id="eqTreble" min="-12" max="12" step="1" value="0" aria-label="Treble">
-        </div>
+        <p class="settings-note settings-note-block" id="iosAudioNote" hidden>Equalizer and crossfade aren't available on iOS — playing audio directly is what lets music keep going with the screen locked.</p>
 
         <p class="settings-heading">Library</p>
         <div class="settings-row">
@@ -864,7 +870,12 @@
   // Web Audio graph can only be created after a user gesture, and
   // createMediaElementSource can only ever be called once per <audio> element.
   function setupAudioGraph() {
-    if (audioCtx) return;
+    // iOS keeps music playing with the screen locked (and rides out route
+    // changes like unplugging headphones) only when the <audio> element plays
+    // straight to the system. Routing it through Web Audio gets it cut off,
+    // so there's deliberately no graph on iOS — and so no EQ, crossfade, or
+    // analyser there. Everything below tolerates audioCtx being undefined.
+    if (audioCtx || IS_IOS) return;
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     analyser = audioCtx.createAnalyser();
     analyser.fftSize = 128;
@@ -1023,7 +1034,12 @@
   function updateMediaSessionMetadata(track) {
     if (!('mediaSession' in navigator)) return;
     navigator.mediaSession.metadata = track
-      ? new MediaMetadata({ title: track.title, artist: track.artist })
+      ? new MediaMetadata({
+          title: track.title,
+          artist: track.artist,
+          album: 'Pulse',
+          artwork: [{ src: 'icon-512.png', sizes: '512x512', type: 'image/png' }],
+        })
       : null;
   }
 
@@ -1146,7 +1162,7 @@
   playBtn.addEventListener('click', () => {
     if (!tracks.length) { addFilesBtn.click(); return; }
     setupAudioGraph();
-    if (audioCtx.state === 'suspended') audioCtx.resume();
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
     const el = activeEl();
     if (isPlaying) {
       el.pause();
@@ -1171,6 +1187,7 @@
 
     const remaining = el.duration - el.currentTime;
     if (
+      audioCtx &&
       crossfadeBtn.classList.contains('toggled') &&
       !crossfadeInProgress &&
       !repeatBtn.classList.contains('toggled') &&
@@ -1206,12 +1223,19 @@
 
   // Lets the OS/browser media notification show track info and respond to
   // hardware media keys (headphones, lock screen, etc).
+  //
+  // play/pause must be idempotent, not a toggle: the OS can send "pause" for
+  // something the audio element already paused on its own (unplugging
+  // headphones), and toggling that would start the music back up.
+  function handleMediaPlay() { if (!isPlaying) playBtn.click(); }
+  function handleMediaPause() { if (isPlaying) playBtn.click(); }
+
   if ('mediaSession' in navigator) {
     const setHandler = (action, handler) => {
       try { navigator.mediaSession.setActionHandler(action, handler); } catch (err) { /* unsupported action */ }
     };
-    setHandler('play', () => playBtn.click());
-    setHandler('pause', () => playBtn.click());
+    setHandler('play', handleMediaPlay);
+    setHandler('pause', handleMediaPause);
     setHandler('previoustrack', () => prevBtn.click());
     setHandler('nexttrack', () => nextBtn.click());
     setHandler('seekto', (details) => {
@@ -1264,6 +1288,8 @@
   if (IS_IOS) {
     volumeSlider.hidden = true;
     document.getElementById('volumeIosNote').hidden = false;
+    document.getElementById('audioFxSettings').hidden = true;
+    document.getElementById('iosAudioNote').hidden = false;
   }
 
   function applyVolume() {
