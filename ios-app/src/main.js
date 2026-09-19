@@ -340,7 +340,98 @@
     document.getElementById('trackArtist').textContent = track.artist;
     updateMediaSessionMetadata(track);
     applyMoodTheme(track.mood);
+    offerResume(track);
   }
+
+  // ---------------------------------------------------------------------
+  // Resume position: remember where each track was left, and offer to pick
+  // up from there the next time it loads. Positions live in memory for
+  // instant lookups and are mirrored to a small IndexedDB store.
+  // ---------------------------------------------------------------------
+  const RESUME_MIN_SECONDS = 10;          // ignore spots this close to the start...
+  const RESUME_END_MARGIN = 10;           // ...or this close to the end
+  const POSITION_SAVE_INTERVAL_MS = 5000; // at most one throttled write per interval
+  const positions = new Map();            // track id -> seconds
+  let lastPositionSave = 0;
+  let pendingResume = null;               // { track, position, shown } while an offer is open
+  const resumePrompt = document.getElementById('resumePrompt');
+  const resumeText = document.getElementById('resumeText');
+  const resumeYes = document.getElementById('resumeYes');
+  const resumeNo = document.getElementById('resumeNo');
+
+  function clearPosition(id) {
+    if (id == null) return;
+    positions.delete(id);
+    dbDeletePosition(id).catch((err) => console.warn('Pulse: failed to clear saved position', err));
+  }
+
+  // Saves the loaded track's current spot. `force` skips the throttle (used
+  // when pausing or leaving a track, so the last few seconds aren't lost).
+  function savePosition(force = false) {
+    const track = tracks[trackIndex];
+    const el = activeEl();
+    if (!track || track.id == null || el.currentSrc !== track.url) return;   // element isn't actually playing this track
+    if (!Number.isFinite(el.duration) || el.duration <= 0 || el.ended) return;
+    const t = el.currentTime;
+    if (t <= 0) return;
+    // While an offer is open, don't overwrite the spot being offered with the
+    // start of this playthrough — normal saving resumes once it's answered or passed.
+    if (pendingResume && pendingResume.track === track && t < pendingResume.position) return;
+    const now = performance.now();
+    if (!force && now - lastPositionSave < POSITION_SAVE_INTERVAL_MS) return;
+    lastPositionSave = now;
+    positions.set(track.id, t);
+    dbSetPosition(track.id, t).catch((err) => console.warn('Pulse: failed to save position', err));
+  }
+
+  function hideResumePrompt() {
+    pendingResume = null;
+    resumePrompt.hidden = true;
+  }
+
+  // Shows the prompt once the loaded track's duration is known, and only if
+  // the saved spot is far enough from both ends to be worth offering.
+  function evaluateResumeOffer() {
+    if (!pendingResume || pendingResume.shown) return;
+    const el = activeEl();
+    if (pendingResume.track !== tracks[trackIndex] || !Number.isFinite(el.duration)) return;
+    const { position } = pendingResume;
+    if (position > RESUME_MIN_SECONDS && position < el.duration - RESUME_END_MARGIN && el.currentTime < position) {
+      resumeText.textContent = `Resume from ${formatTime(position)}?`;
+      resumePrompt.hidden = false;
+      pendingResume.shown = true;
+    } else {
+      pendingResume = null;
+    }
+  }
+
+  // Called for every track that becomes the loaded one. Any offer for the
+  // previous track is dropped first, so switching before answering is safe.
+  function offerResume(track) {
+    hideResumePrompt();
+    const saved = track.id != null ? positions.get(track.id) : undefined;
+    if (!(saved > RESUME_MIN_SECONDS)) return;
+    pendingResume = { track, position: saved, shown: false };
+    evaluateResumeOffer();   // otherwise the element's loadedmetadata event calls it
+  }
+
+  resumeYes.addEventListener('click', () => {
+    const offer = pendingResume;
+    hideResumePrompt();
+    if (!offer || offer.track !== tracks[trackIndex]) return;
+    const el = activeEl();
+    if (Number.isFinite(el.duration)) el.currentTime = offer.position;
+  });
+
+  resumeNo.addEventListener('click', () => {
+    const offer = pendingResume;
+    hideResumePrompt();
+    if (offer && offer.track === tracks[trackIndex]) clearPosition(offer.track.id);
+  });
+
+  document.addEventListener('visibilitychange', () => { if (document.hidden) savePosition(true); });
+  window.addEventListener('pagehide', () => savePosition(true));
+
 
   function resetProgressUI() {
     progressFill.style.width = '0%';
@@ -352,8 +443,10 @@
   // Hard cut: used whenever crossfade is off, unavailable, or nothing is
   // currently playing (nothing to fade out of).
   function hardSwitch(index, autoplay) {
+    savePosition(true);   // the outgoing track's spot, before anything changes
     if (!tracks.length) {
       trackIndex = 0;
+      hideResumePrompt();
       activeEl().pause();
       activeEl().removeAttribute('src');
       document.getElementById('trackTitle').textContent = '—';
@@ -422,6 +515,13 @@
     toGain.setValueAtTime(0, now);
     toGain.linearRampToValueAtTime(1, now + fadeSeconds);
 
+    // Leaving the outgoing track: drop its spot if it played out, keep it if it was cut short.
+    const outgoing = tracks[trackIndex];
+    if (outgoing) {
+      if (Number.isFinite(fromEl.duration) && fromEl.duration - fromEl.currentTime <= RESUME_END_MARGIN) clearPosition(outgoing.id);
+      else savePosition(true);
+    }
+
     activeSlot = toKey;
     trackIndex = index;
     orderPos = playOrder.indexOf(trackIndex);
@@ -469,6 +569,8 @@
 
   function handleTimeUpdate(el) {
     if (!isActive(el) || isSeeking) return;
+    if (pendingResume && el.currentTime >= pendingResume.position) hideResumePrompt();
+    savePosition();
     const pct = el.duration ? (el.currentTime / el.duration) * 100 : 0;
     progressFill.style.width = pct + '%';
     progressHandle.style.left = pct + '%';
@@ -499,6 +601,8 @@
 
   function handleEnded(el) {
     if (!isActive(el)) return;
+    const finished = tracks[trackIndex];
+    if (finished) clearPosition(finished.id);
     if (repeatBtn.classList.contains('toggled')) {
       el.currentTime = 0;
       el.play().catch(() => {});
@@ -509,9 +613,12 @@
 
   [audioA, audioB].forEach((el) => {
     el.addEventListener('play', () => { if (isActive(el)) setPlayingUI(true); });
-    el.addEventListener('pause', () => { if (isActive(el)) setPlayingUI(false); });
+    el.addEventListener('pause', () => { if (isActive(el)) { setPlayingUI(false); savePosition(true); } });
     el.addEventListener('loadedmetadata', () => {
-      if (isActive(el)) durationEl.textContent = formatTime(el.duration);
+      if (isActive(el)) {
+        durationEl.textContent = formatTime(el.duration);
+        evaluateResumeOffer();
+      }
     });
     el.addEventListener('timeupdate', () => handleTimeUpdate(el));
     el.addEventListener('ended', () => handleEnded(el));
@@ -1403,6 +1510,8 @@
         const at = pl.trackIds.indexOf(removed.id);
         if (at >= 0) { pl.trackIds.splice(at, 1); savePlaylist(pl); }
       });
+      clearPosition(removed.id);
+      if (pendingResume && pendingResume.track === removed) hideResumePrompt();
     }
 
     if (!tracks.length) {
@@ -1457,13 +1566,14 @@
   const DB_NAME = 'pulse-player';
   const STORE_NAME = 'tracks';
   const PLAYLIST_STORE = 'playlists';
+  const POSITION_STORE = 'lastPositions';
   let dbPromise = null;
 
   function getDB() {
     if (!dbPromise) {
       dbPromise = new Promise((resolve, reject) => {
         if (!window.indexedDB) { reject(new Error('indexedDB unavailable')); return; }
-        const req = indexedDB.open(DB_NAME, 2);
+        const req = indexedDB.open(DB_NAME, 3);
         req.onupgradeneeded = () => {
           const db = req.result;
           if (!db.objectStoreNames.contains(STORE_NAME)) {
@@ -1471,6 +1581,9 @@
           }
           if (!db.objectStoreNames.contains(PLAYLIST_STORE)) {
             db.createObjectStore(PLAYLIST_STORE, { keyPath: 'id', autoIncrement: true });
+          }
+          if (!db.objectStoreNames.contains(POSITION_STORE)) {
+            db.createObjectStore(POSITION_STORE, { keyPath: 'trackId' });
           }
         };
         req.onsuccess = () => {
@@ -1595,6 +1708,36 @@
     });
   }
 
+  async function dbGetAllPositions() {
+    const db = await getDB();
+    if (!db) return [];
+    return new Promise((resolve, reject) => {
+      const req = db.transaction(POSITION_STORE, 'readonly').objectStore(POSITION_STORE).getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function dbSetPosition(trackId, position) {
+    const db = await getDB();
+    if (!db) return;
+    return new Promise((resolve, reject) => {
+      const req = db.transaction(POSITION_STORE, 'readwrite').objectStore(POSITION_STORE).put({ trackId, position, savedAt: Date.now() });
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function dbDeletePosition(trackId) {
+    const db = await getDB();
+    if (!db) return;
+    return new Promise((resolve, reject) => {
+      const req = db.transaction(POSITION_STORE, 'readwrite').objectStore(POSITION_STORE).delete(trackId);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  }
+
   // Guards against re-adding the same file twice (e.g. dropping the same
   // folder again in a later session, once it's already persisted).
   const knownFileKeys = new Set();
@@ -1677,6 +1820,12 @@
       if (pl.updatedAt == null) { pl.updatedAt = 0; dirty = true; }
       if (dirty) savePlaylist(pl);
     });
+
+    try {
+      (await dbGetAllPositions()).forEach((rec) => positions.set(rec.trackId, rec.position));
+    } catch (err) {
+      // no saved positions; nothing to offer
+    }
   }
 
   // ---------------------------------------------------------------------

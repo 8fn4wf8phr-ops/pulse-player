@@ -429,6 +429,30 @@
     letter-spacing: -0.01em;
   }
 
+  .resume-prompt {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .resume-btn {
+    background: var(--accent-dim);
+    color: var(--accent);
+    border: none;
+    border-radius: 999px;
+    padding: 4px 11px;
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.6s ease, color 0.6s ease;
+  }
+  .resume-btn.secondary { background: var(--track-bg); color: var(--text); }
+  .resume-btn:focus-visible { outline: 1px solid var(--accent); }
+
   .track-artist {
     font-size: 14px;
     color: var(--text-dim);
