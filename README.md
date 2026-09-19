@@ -20,7 +20,7 @@ A music player web app built in vanilla HTML, CSS, and JavaScript — no framewo
 
 **6. Shipping it.** The repo went up on GitHub and connected to Vercel for auto-deploy on every push to `main`.
 
-**7. Crossfade and an equalizer.** Switching tracks used to be a hard cut — one `<audio>` element, swap the `src`, done. Crossfade needed two, so the player now runs two audio elements at once, each through its own bass/mid/treble `BiquadFilterNode` chain and gain node, both feeding one shared analyser. Crossfading ramps one element's gain down and the other's up over four seconds — triggered automatically near the end of a track, or on a manual skip — while the equalizer sliders adjust both chains identically so the incoming track already sounds right before it's audible. Both live in a new settings panel, opened from a gear icon next to the library button.
+**7. Crossfade and an equalizer.** Switching tracks used to be a hard cut — one `<audio>` element, swap the `src`, done. Crossfade needed two, so the player now runs two audio elements at once, each through its own bass/mid/treble `BiquadFilterNode` chain and gain node, both feeding one shared analyser. Crossfading ramps one element's gain down and the other's up over a length you set with a 0–5 second slider (0 is the old hard cut; a fade never takes more than a third of a track, so short tracks stay sane) — triggered automatically near the end of a track, or on a manual skip — while the equalizer sliders adjust both chains identically so the incoming track already sounds right before it's audible. Both live in a new settings panel, opened from a gear icon next to the library button.
 
 **8. Media Session and keyboard shortcuts.** Two smaller finishing touches: the Media Session API now reports track metadata and playback state to the OS, so lock-screen and hardware media keys (play/pause, next/previous, scrubbing) work like a native app; and a global keyboard layer adds space to play/pause and arrow keys for seek/volume, stepping aside whenever a form control already has focus so it doesn't fight with native slider behavior.
 
@@ -59,7 +59,7 @@ The full history of that progression — every step above as its own commit — 
 - Play/pause, seekable progress bar (click, drag, or arrow keys), volume control (hardware buttons only on iOS)
 - Next/previous with a 3-second "restart vs. skip back" rule, auto-advance on end, repeat
 - Real shuffle — randomized play order, not just a toggle
-- Crossfade between tracks (auto-triggered near the end of a track, or on manual skip) — not on iOS, where the audio graph is skipped so music keeps playing with the screen locked
+- Crossfade between tracks with an adjustable 0–5 second length (auto-triggered near the end of a track, or on manual skip) — not on iOS, where the audio graph is skipped so music keeps playing with the screen locked
 - A 3-band equalizer (bass/mid/treble), applied live via Web Audio `BiquadFilterNode`s (not on iOS — see below)
 - Import songs by file picker, folder picker, or drag-and-drop (including whole folders)
 - Automatic title/artist from ID3 tags, with filename-based fallback parsing

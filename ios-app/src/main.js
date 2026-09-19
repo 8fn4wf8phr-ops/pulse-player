@@ -11,7 +11,8 @@
   const artEl = document.querySelector('.art');
   const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#FF5C7A';
 
-  const CROSSFADE_SECONDS = 4;
+  // Crossfade length in seconds (0 = off, hard cut). Set by the settings slider.
+  let crossfadeSeconds = 0;
   let crossfadeInProgress = false;
 
   let audioCtx, analyser, dataArray, bufferLength;
@@ -272,7 +273,8 @@
   const repeatBtn = document.getElementById('repeatBtn');
   const prevBtn = document.getElementById('prevBtn');
   const nextBtn = document.getElementById('nextBtn');
-  const crossfadeBtn = document.getElementById('crossfadeBtn');
+  const crossfadeSlider = document.getElementById('crossfadeSlider');
+  const crossfadeValue = document.getElementById('crossfadeValue');
   const eqBassSlider = document.getElementById('eqBass');
   const eqMidSlider = document.getElementById('eqMid');
   const eqTrebleSlider = document.getElementById('eqTreble');
@@ -371,7 +373,7 @@
 
     const canCrossfade =
       audioCtx &&
-      crossfadeBtn.classList.contains('toggled') &&
+      crossfadeSeconds > 0 &&
       isPlaying &&
       !crossfadeInProgress &&
       index !== trackIndex;
@@ -395,13 +397,17 @@
     toGain.setValueAtTime(0, audioCtx.currentTime);
     try { await toEl.play(); } catch (err) { /* ignore */ }
 
+    // A fade never takes more than a third of the incoming track, so a short
+    // track can't spend its whole life fading in and its own end-of-track
+    // fade always starts after this one has finished.
+    const fadeSeconds = Math.min(crossfadeSeconds, Number.isFinite(toEl.duration) ? toEl.duration / 3 : Infinity);
     const now = audioCtx.currentTime;
     fromGain.cancelScheduledValues(now);
     fromGain.setValueAtTime(fromGain.value, now);
-    fromGain.linearRampToValueAtTime(0, now + CROSSFADE_SECONDS);
+    fromGain.linearRampToValueAtTime(0, now + fadeSeconds);
     toGain.cancelScheduledValues(now);
     toGain.setValueAtTime(0, now);
-    toGain.linearRampToValueAtTime(1, now + CROSSFADE_SECONDS);
+    toGain.linearRampToValueAtTime(1, now + fadeSeconds);
 
     activeSlot = toKey;
     trackIndex = index;
@@ -416,7 +422,7 @@
       fromEl.removeAttribute('src');
       fromGain.value = 1;
       crossfadeInProgress = false;
-    }, CROSSFADE_SECONDS * 1000 + 150);
+    }, fadeSeconds * 1000 + 150);
   }
 
   function formatTime(seconds) {
@@ -465,13 +471,13 @@
     const remaining = el.duration - el.currentTime;
     if (
       audioCtx &&
-      crossfadeBtn.classList.contains('toggled') &&
+      crossfadeSeconds > 0 &&
       !crossfadeInProgress &&
       !repeatBtn.classList.contains('toggled') &&
       tracks.length > 1 &&
       el.duration &&
       remaining > 0 &&
-      remaining <= CROSSFADE_SECONDS
+      remaining <= Math.min(crossfadeSeconds, el.duration / 3)
     ) {
       const nextIndex = playOrder[(orderPos + 1) % playOrder.length];
       switchTrack(nextIndex, true);
@@ -595,10 +601,16 @@
     localStorage.setItem('pulse:repeat', active ? '1' : '0');
   });
 
-  crossfadeBtn.addEventListener('click', () => {
-    const active = crossfadeBtn.classList.toggle('toggled');
-    crossfadeBtn.setAttribute('aria-pressed', active);
-    localStorage.setItem('pulse:crossfade', active ? '1' : '0');
+  function setCrossfadeSeconds(value) {
+    const seconds = Math.min(5, Math.max(0, Number(value) || 0));
+    crossfadeSeconds = seconds;
+    crossfadeSlider.value = seconds;
+    crossfadeValue.textContent = seconds === 0 ? 'Off' : `${seconds}s`;
+  }
+
+  crossfadeSlider.addEventListener('input', () => {
+    setCrossfadeSeconds(crossfadeSlider.value);
+    localStorage.setItem('pulse:crossfadeSeconds', String(crossfadeSeconds));
   });
 
   function applyEQ() {
@@ -1901,10 +1913,9 @@
       repeatBtn.classList.add('toggled');
       repeatBtn.setAttribute('aria-pressed', 'true');
     }
-    if (localStorage.getItem('pulse:crossfade') === '1') {
-      crossfadeBtn.classList.add('toggled');
-      crossfadeBtn.setAttribute('aria-pressed', 'true');
-    }
+    // The old on/off toggle used a fixed 4s fade, so "on" carries over as 4.
+    const savedFade = localStorage.getItem('pulse:crossfadeSeconds');
+    setCrossfadeSeconds(savedFade !== null ? savedFade : (localStorage.getItem('pulse:crossfade') === '1' ? 4 : 0));
 
     const savedBass = localStorage.getItem('pulse:eqBass');
     const savedMid = localStorage.getItem('pulse:eqMid');

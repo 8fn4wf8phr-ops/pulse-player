@@ -203,6 +203,10 @@
   .lib-row-edit-error { margin: 0; font-size: 11px; color: var(--accent); }
 
   .settings-group { display: flex; flex-direction: column; gap: 20px; }
+  .settings-stack { display: flex; flex-direction: column; gap: 10px; }
+  .settings-label-wide { width: auto; }
+  .settings-value { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--text-dim); }
+  input[type="range"].settings-slider-full { flex: none; width: 100%; }
   .settings-note-block { margin: 0; }
 
   .volume-ios-note {
