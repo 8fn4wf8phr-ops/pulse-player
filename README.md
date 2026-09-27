@@ -54,6 +54,10 @@ A music player web app built in vanilla HTML, CSS, and JavaScript — no framewo
 
 **23. Search and mood filters.** The library panel now has a search box (title or artist, debounced so a fast typist on a phone isn't re-rendering the list every keystroke) and a chip per mood, tinted with that mood's actual color; both apply together, and clicking an active chip clears it. This only ever changes what's drawn, never the underlying library or playlist order, so the currently-playing track's highlight survives being filtered in and out of view.
 
+**24. Equalizer presets, and no more zipper noise.** The 3-band equalizer has been in the settings panel since the crossfade round — what it was missing was quick presets (Flat, Bass Boost, Vocal Boost, highlighted when the sliders happen to match one) and smoother gain changes. Dragging a slider used to set each filter's gain directly, which can click audibly when many changes land in the same fraction of a second; gain now glides to each new value with `setTargetAtTime` instead, short enough to still feel instant. Both are desktop/Android only, same as the equalizer itself — the audio graph they run on doesn't exist on iOS (see the previous entry on why).
+
+**25. A waveform seek bar.** The flat progress bar is now a waveform: each track's audio is decoded once via `decodeAudioData()` (through its own dedicated, output-less context — nothing to do with the playback graph iOS doesn't get) into ~120 peaks, cached per track. It's drawn as two identical bar charts stacked together, one dim and one in the current track's mood color; revealing more of the color layer as playback advances is a CSS width change on a clipping wrapper, not a redraw, so continuous position updates cost nothing beyond that. A flat placeholder shows immediately while a new track's peaks are still computing. Click, drag, and arrow-key seeking are unchanged underneath. Decoding a 6-minute file took about 540ms in testing, entirely inside the browser's own async decode (off the main thread by design); the actual peak-extraction loop this app runs afterward took 5ms — small enough that a Web Worker wouldn't meaningfully help.
+
 The full history of that progression — every step above as its own commit — is in this repo's [commit log](../../commits/main).
 
 ## Design
@@ -64,11 +68,11 @@ The full history of that progression — every step above as its own commit — 
 
 ## Features
 
-- Play/pause, seekable progress bar (click, drag, or arrow keys), volume control (hardware buttons only on iOS)
+- Play/pause, a waveform-shaped seek bar (click, drag, or arrow keys) tinted with the track's mood color, volume control (hardware buttons only on iOS)
 - Next/previous with a 3-second "restart vs. skip back" rule, auto-advance on end, repeat
 - Real shuffle — randomized play order, not just a toggle
 - Crossfade between tracks with an adjustable 0–5 second length (auto-triggered near the end of a track, or on manual skip) — not on iOS, where the audio graph is skipped so music keeps playing with the screen locked
-- A 3-band equalizer (bass/mid/treble), applied live via Web Audio `BiquadFilterNode`s (not on iOS — see below)
+- A 3-band equalizer (bass/mid/treble), applied live via Web Audio `BiquadFilterNode`s (not on iOS — see below), with Flat/Bass Boost/Vocal Boost presets
 - Import songs by file picker, folder picker, or drag-and-drop (including whole folders)
 - Automatic title/artist from ID3 tags, with filename-based fallback parsing
 - A library panel to browse, jump to, or remove any imported track
