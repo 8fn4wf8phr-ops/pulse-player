@@ -330,14 +330,29 @@
           title: track.title,
           artist: track.artist,
           album: 'Pulse',
-          artwork: [{ src: 'icon-512.png', sizes: '512x512', type: 'image/png' }],
+          // Real cover art if this track has any; the app icon otherwise.
+          artwork: track.artworkUrl
+            ? [{ src: track.artworkUrl, sizes: '512x512' }]
+            : [{ src: 'icon-512.png', sizes: '512x512', type: 'image/png' }],
         })
       : null;
+  }
+
+  function updateTrackArt(track) {
+    const img = document.getElementById('trackArt');
+    if (track && track.artworkUrl) {
+      img.src = track.artworkUrl;
+      img.hidden = false;
+    } else {
+      img.hidden = true;
+      img.removeAttribute('src');
+    }
   }
 
   function setNowPlayingUI(track) {
     document.getElementById('trackTitle').textContent = track.title;
     document.getElementById('trackArtist').textContent = track.artist;
+    updateTrackArt(track);
     updateMediaSessionMetadata(track);
     applyMoodTheme(track.mood);
     offerResume(track);
@@ -451,6 +466,7 @@
       activeEl().removeAttribute('src');
       document.getElementById('trackTitle').textContent = '—';
       document.getElementById('trackArtist').textContent = 'Add a track to get started';
+      updateTrackArt(null);
       updateMediaSessionMetadata(null);
       resetProgressUI();
       renderLibrary();
@@ -811,6 +827,69 @@
   const newPlaylistForm = document.getElementById('newPlaylistForm');
   const newPlaylistName = document.getElementById('newPlaylistName');
   const newPlaylistCancel = document.getElementById('newPlaylistCancel');
+  const librarySearchInput = document.getElementById('librarySearch');
+  const librarySearchClear = document.getElementById('librarySearchClear');
+  const libraryMoodChips = document.getElementById('libraryMoodChips');
+
+  // Search/mood filtering only ever changes what renderLibrary() draws —
+  // never the underlying tracks/playlist data.
+  let librarySearchText = '';
+  let libraryMoodFilter = null;
+  let librarySearchDebounce = null;
+
+  function moodChipColor(mood) {
+    const p = moodPalettes[mood];
+    return `hsl(${p.hue}, ${p.sat}%, ${p.light}%)`;
+  }
+
+  MOODS.forEach((mood) => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'lib-mood-chip';
+    chip.dataset.mood = mood;
+    chip.setAttribute('aria-pressed', 'false');
+    const dot = document.createElement('span');
+    dot.className = 'dot';
+    dot.style.background = moodChipColor(mood);
+    chip.appendChild(dot);
+    chip.appendChild(document.createTextNode(mood.charAt(0).toUpperCase() + mood.slice(1)));
+    // Clicking the already-active chip clears it — that also covers the
+    // "or a Clear chip" case from the brief without a second control.
+    chip.addEventListener('click', () => {
+      libraryMoodFilter = libraryMoodFilter === mood ? null : mood;
+      renderLibrary();
+    });
+    libraryMoodChips.appendChild(chip);
+  });
+
+  function filterTracksForDisplay(list) {
+    let out = list;
+    if (libraryMoodFilter) out = out.filter((t) => t.mood === libraryMoodFilter);
+    const q = librarySearchText.trim().toLowerCase();
+    if (q) out = out.filter((t) => t.title.toLowerCase().includes(q) || t.artist.toLowerCase().includes(q));
+    return out;
+  }
+
+  librarySearchInput.addEventListener('input', () => {
+    librarySearchClear.hidden = librarySearchInput.value.trim() === '';
+    // Debounced so a fast typist on a phone isn't re-rendering the list
+    // (now somewhat heavier per row, with artwork) on every keystroke.
+    clearTimeout(librarySearchDebounce);
+    librarySearchDebounce = setTimeout(() => {
+      librarySearchText = librarySearchInput.value;
+      renderLibrary();
+    }, 130);
+  });
+  librarySearchInput.addEventListener('keydown', (e) => { if (e.key === 'Escape') e.stopPropagation(); });
+  librarySearchClear.addEventListener('click', () => {
+    librarySearchInput.value = '';
+    librarySearchText = '';
+    clearTimeout(librarySearchDebounce);
+    librarySearchClear.hidden = true;
+    renderLibrary();
+    librarySearchInput.focus();
+  });
+
   const ICON_TRASH = deletePlaylistBtn.innerHTML;
 
   function openLibrary() {
@@ -1249,15 +1328,30 @@
     if (editingTrack && !tracks.includes(editingTrack)) editingTrack = null;
     if (menuTrack && !tracks.includes(menuTrack)) menuTrack = null;
 
-    const pl = currentPlaylist();
-    const visible = viewTracks();
+    librarySearchClear.hidden = librarySearchInput.value.trim() === '';
+    [...libraryMoodChips.children].forEach((chip) => {
+      const isActive = chip.dataset.mood === libraryMoodFilter;
+      chip.classList.toggle('active', isActive);
+      chip.setAttribute('aria-pressed', String(isActive));
+    });
 
-    if (!visible.length) {
+    const pl = currentPlaylist();
+    const unfiltered = viewTracks();
+    const visible = filterTracksForDisplay(unfiltered);
+
+    if (!unfiltered.length) {
       const empty = document.createElement('p');
       empty.className = 'lib-empty';
       empty.textContent = pl
         ? 'No tracks in this playlist yet — switch to All Tracks and use the playlist button on a track to add it.'
         : 'No tracks yet — use the + or folder button above, or drop mp3 files anywhere on the page.';
+      libraryList.appendChild(empty);
+      return;
+    }
+    if (!visible.length) {
+      const empty = document.createElement('p');
+      empty.className = 'lib-empty';
+      empty.textContent = 'No tracks match.';
       libraryList.appendChild(empty);
       return;
     }
@@ -1283,6 +1377,16 @@
       main.type = 'button';
       main.className = 'lib-row-main';
 
+      if (track.artworkUrl) {
+        const art = document.createElement('img');
+        art.className = 'lib-row-art';
+        art.src = track.artworkUrl;
+        art.alt = '';
+        main.appendChild(art);
+      }
+
+      const textWrap = document.createElement('span');
+      textWrap.className = 'lib-row-text';
       const titleSpan = document.createElement('span');
       titleSpan.className = 'lib-row-title';
       titleSpan.textContent = track.title;
@@ -1291,8 +1395,9 @@
       artistSpan.className = 'lib-row-artist';
       artistSpan.textContent = track.artist;
 
-      main.appendChild(titleSpan);
-      main.appendChild(artistSpan);
+      textWrap.appendChild(titleSpan);
+      textWrap.appendChild(artistSpan);
+      main.appendChild(textWrap);
       main.addEventListener('click', () => {
         // Next/previous/auto-advance follow the list this track was started from.
         if (playContext !== currentView) { playContext = currentView; rebuildOrder(); }
@@ -1501,6 +1606,7 @@
 
     knownFileKeys.delete(`${removed.name}:${removed.size}`);
     if (removed.url) URL.revokeObjectURL(removed.url);
+    if (removed.artworkUrl) URL.revokeObjectURL(removed.artworkUrl);
 
     if (removed.id != null) {
       dbDeleteTrack(removed.id).catch((err) => {
@@ -1546,6 +1652,130 @@
       return { artist: match[1].trim(), title: match[2].trim() };
     }
     return { artist: 'Unknown Artist', title: cleaned || filename };
+  }
+
+  // ---------------------------------------------------------------------
+  // Embedded metadata (ID3 tags) — title/artist beyond the filename guess,
+  // plus cover art when the file has any.
+  // ---------------------------------------------------------------------
+  const MAX_ARTWORK_DIMENSION = 300; // a thumbnail, not a wallpaper — keeps IndexedDB/memory light on a phone
+
+  function pictureTagToBlob(picture) {
+    if (!picture || !picture.data || !picture.data.length) return null;
+    return new Blob([new Uint8Array(picture.data)], { type: picture.format || 'image/jpeg' });
+  }
+
+  async function downscaleArtwork(blob) {
+    try {
+      const bitmap = await createImageBitmap(blob);
+      if (bitmap.width <= MAX_ARTWORK_DIMENSION && bitmap.height <= MAX_ARTWORK_DIMENSION) {
+        if (bitmap.close) bitmap.close();
+        return blob;
+      }
+      const scale = MAX_ARTWORK_DIMENSION / Math.max(bitmap.width, bitmap.height);
+      const w = Math.max(1, Math.round(bitmap.width * scale));
+      const h = Math.max(1, Math.round(bitmap.height * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+      if (bitmap.close) bitmap.close();
+      const resized = await new Promise((resolve) => canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.85));
+      return resized || blob;
+    } catch (err) {
+      return blob; // couldn't downscale (unsupported format, etc.) — keep the original rather than lose the art
+    }
+  }
+
+  // { title, artist, album, pictureBlob } — any field the file's tags don't
+  // have comes back null rather than a placeholder, so the caller decides
+  // what to fall back to.
+  async function readAudioMetadata(file) {
+    const tags = await readTags(file);
+    if (!tags) return { title: null, artist: null, album: null, pictureBlob: null };
+    let pictureBlob = pictureTagToBlob(tags.picture);
+    if (pictureBlob) pictureBlob = await downscaleArtwork(pictureBlob);
+    return {
+      title: tags.title || null,
+      artist: tags.artist || null,
+      album: tags.album || null,
+      pictureBlob,
+    };
+  }
+
+  // Reads metadata for a batch of files one at a time with an idle pause
+  // between each, rather than firing every jsmediatags read at once — on a
+  // big import that would jank the UI, especially on a phone.
+  // requestIdleCallback isn't available in iOS Safari/WKWebView, hence the
+  // setTimeout fallback.
+  function idleGap() {
+    return new Promise((resolve) => {
+      if (window.requestIdleCallback) requestIdleCallback(() => resolve(), { timeout: 500 });
+      else setTimeout(resolve, 60);
+    });
+  }
+
+  const metadataQueue = [];
+  let metadataQueueRunning = false;
+
+  async function runMetadataQueue() {
+    metadataQueueRunning = true;
+    while (metadataQueue.length) {
+      const job = metadataQueue.shift();
+      await idleGap();
+      try {
+        await job();
+      } catch (err) {
+        // one file's metadata failing shouldn't stop the rest of the batch
+      }
+    }
+    metadataQueueRunning = false;
+  }
+
+  function enqueueMetadataRead(job) {
+    metadataQueue.push(job);
+    if (!metadataQueueRunning) runMetadataQueue();
+  }
+
+  // Applies a file's tags to the track that was already added under its
+  // filename guess, once they resolve. Guards against the track having been
+  // removed in the meantime, and never overwrites a title the user already
+  // set by hand (checked via renamedAt, the same flag the rename feature and
+  // sync use to mean "this name was deliberately chosen").
+  async function upgradeTrackMetadata(track, file) {
+    if (!tracks.includes(track)) return;
+    const meta = await readAudioMetadata(file);
+    if (!tracks.includes(track)) return;
+
+    const changes = {};
+    if (!track.renamedAt) {
+      const newTitle = meta.title || track.title;
+      const newArtist = meta.artist || track.artist;
+      if (newTitle !== track.title || newArtist !== track.artist) {
+        track.title = newTitle;
+        track.artist = newArtist;
+        track.mood = pickMood(newTitle, newArtist);
+        changes.title = newTitle;
+        changes.artist = newArtist;
+        changes.mood = track.mood;
+        if (tracks[trackIndex] === track) setNowPlayingUI(track);
+      }
+    }
+
+    if (meta.pictureBlob) {
+      track.artworkUrl = URL.createObjectURL(meta.pictureBlob);
+      changes.artwork = meta.pictureBlob;
+      if (tracks[trackIndex] === track) {
+        updateTrackArt(track);
+        updateMediaSessionMetadata(track);   // the lock-screen entry was already showing the app-icon fallback
+      }
+    }
+
+    if (!Object.keys(changes).length) return;
+    if (track.id != null) {
+      dbUpdateTrack(track.id, changes).catch((err) => console.warn('Pulse: failed to save tag metadata', err));
+    }
+    renderLibrary();
   }
 
   function readTags(file) {
@@ -1759,18 +1989,18 @@
       if (knownFileKeys.has(dedupeKey)) continue;
       knownFileKeys.add(dedupeKey);
 
+      // Added under a filename guess immediately — the file is playable
+      // right away, rather than making the import wait on a tag read.
+      // upgradeTrackMetadata() patches in the real title/artist/artwork
+      // (queued, not fired all at once) once jsmediatags resolves.
       const fallback = parseFilenameMeta(file.name);
-      const tags = await readTags(file);
-      const title = (tags && tags.title) || fallback.title;
-      const artist = (tags && tags.artist) || fallback.artist;
-
-      const mood = pickMood(title, artist);
-      const track = { id: null, title, artist, mood, name: file.name, size: file.size, url: URL.createObjectURL(file), order: nextOrder() };
+      const mood = pickMood(fallback.title, fallback.artist);
+      const track = { id: null, title: fallback.title, artist: fallback.artist, mood, name: file.name, size: file.size, url: URL.createObjectURL(file), order: nextOrder(), artworkUrl: null };
       tracks.push(track);
       added = true;
       renderLibrary();
 
-      dbAddTrack({ title, artist, mood, name: file.name, size: file.size, type: file.type, data: file, order: track.order })
+      dbAddTrack({ title: fallback.title, artist: fallback.artist, mood, name: file.name, size: file.size, type: file.type, data: file, order: track.order })
         .then((id) => {
           track.id = id;
           if (id != null && tracks[trackIndex] === track) {
@@ -1780,6 +2010,8 @@
           if (id != null) renderLibrary();
         })
         .catch(() => {});
+
+      enqueueMetadataRead(() => upgradeTrackMetadata(track, file));
     }
 
     if (!added) return;
@@ -1802,7 +2034,7 @@
     records.forEach((rec, i) => {
       knownFileKeys.add(`${rec.name}:${rec.size}`);
       const mood = rec.mood || pickMood(rec.title, rec.artist);
-      tracks.push({ id: rec.id, title: rec.title, artist: rec.artist, mood, name: rec.name, size: rec.size, url: URL.createObjectURL(rec.data), hash: rec.hash || null, renamedAt: rec.renamedAt || 0, order: needsOrder ? i : rec.order });
+      tracks.push({ id: rec.id, title: rec.title, artist: rec.artist, mood, name: rec.name, size: rec.size, url: URL.createObjectURL(rec.data), hash: rec.hash || null, renamedAt: rec.renamedAt || 0, order: needsOrder ? i : rec.order, artworkUrl: rec.artwork ? URL.createObjectURL(rec.artwork) : null });
     });
     if (needsOrder && records.length) {
       dbSetOrders(records.map((rec, i) => ({ id: rec.id, order: i }))).catch(() => {});

@@ -44,6 +44,16 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg>
         </button>
       </div>
+      <div class="lib-search-row">
+        <div class="lib-search-box">
+          <svg class="lib-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <input type="search" id="librarySearch" placeholder="Search title or artist" aria-label="Search title or artist" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+          <button type="button" class="lib-search-clear" id="librarySearchClear" aria-label="Clear search" hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+        </div>
+      </div>
+      <div class="lib-mood-chips" id="libraryMoodChips" role="group" aria-label="Filter by mood"></div>
       <form class="lib-new-playlist" id="newPlaylistForm" hidden>
         <input type="text" id="newPlaylistName" maxlength="60" placeholder="Playlist name" aria-label="Playlist name" autocomplete="off">
         <button type="submit" class="lib-row-icon-btn" aria-label="Create playlist" title="Create playlist">
@@ -146,8 +156,13 @@
   </div>
 
   <div class="track-info">
-    <p class="track-title" id="trackTitle">—</p>
-    <p class="track-artist" id="trackArtist">Add a track to get started</p>
+    <div class="track-info-row">
+      <img class="track-art" id="trackArt" alt="" hidden>
+      <div class="track-info-text">
+        <p class="track-title" id="trackTitle">—</p>
+        <p class="track-artist" id="trackArtist">Add a track to get started</p>
+      </div>
+    </div>
     <div class="resume-prompt" id="resumePrompt" role="group" aria-label="Resume playback" hidden>
       <span class="resume-text" id="resumeText" aria-live="polite"></span>
       <button type="button" class="resume-btn" id="resumeYes">Resume</button>
