@@ -50,6 +50,10 @@ A music player web app built in vanilla HTML, CSS, and JavaScript — no framewo
 
 **21. Resume where you left off.** Long tracks (a mix, a podcast-length recording) are miserable to lose your place in. Each track's position is now saved to a small `lastPositions` IndexedDB store (the database went to version 3), at most once every five seconds while playing, plus once when you pause, leave the track, or background the app. The next time that track loads, a small inline prompt offers "Resume from 2:14?" with **Resume** and **Start over** — never a silent seek. It's only offered when the saved spot is more than 10 seconds in and more than 10 seconds from the end, which means it has to wait until the track's duration is known. A track that finishes (or fades out at its end) forgets its spot, and while an offer is open the saved spot isn't overwritten by the start of a fresh playthrough. Positions stay on the device — where you were in a track is a per-device fact, so they aren't part of sync.
 
+**22. Cover art, and no more waiting on tags.** ID3 title/artist reading already existed, but it ran before a dropped file even appeared in the library — a big folder import meant watching each track pop in one at a time as jsmediatags worked through them. A file's fallback name (from its filename) now shows immediately and is playable right away; the real tag data is read afterward and patched in once it resolves, one file at a time with a short pause between each, rather than all at once (which would jank the UI on a big import, especially on a phone). If the file has embedded cover art, it's downscaled to a small thumbnail and shown in the library row, the now-playing area, and the lock screen. A track you've already renamed by hand is left alone when its tags resolve, so a slow batch import can't quietly undo a rename you made in the meantime.
+
+**23. Search and mood filters.** The library panel now has a search box (title or artist, debounced so a fast typist on a phone isn't re-rendering the list every keystroke) and a chip per mood, tinted with that mood's actual color; both apply together, and clicking an active chip clears it. This only ever changes what's drawn, never the underlying library or playlist order, so the currently-playing track's highlight survives being filtered in and out of view.
+
 The full history of that progression — every step above as its own commit — is in this repo's [commit log](../../commits/main).
 
 ## Design
@@ -70,6 +74,8 @@ The full history of that progression — every step above as its own commit — 
 - A library panel to browse, jump to, or remove any imported track
 - Library, volume, playback, crossfade, and EQ settings persist across reloads (IndexedDB + `localStorage`)
 - Export/import the library as a `.zip` file to move it between browsers or devices
+- Search the library by title/artist, with mood filter chips — both combine, and the search box is debounced
+- Automatic title/artist from ID3 tags, non-blocking (the file is playable immediately under its filename, upgraded once tags resolve) with embedded cover art shown in the library, now-playing area, and lock screen
 - Rename any track's title and artist inline from the library panel
 - Resume where you left off: each track's position is remembered, and reloading it offers to pick up from there
 - Drag to reorder the library (order is saved), and make playlists: add tracks from a per-row menu, reorder within a playlist, and play through one — a playlist is a queue for next/previous/shuffle. Playlists and the custom track order sync between devices
