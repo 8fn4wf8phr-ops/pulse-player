@@ -253,6 +253,78 @@
   .eq-preset-btn:hover { color: var(--text); }
   .eq-preset-btn.active { background: var(--accent-dim); color: var(--accent); }
 
+  .loop-region {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    background: var(--accent-dim);
+    pointer-events: none;
+    border-radius: 3px;
+  }
+  .loop-marker {
+    position: absolute;
+    top: -5px;
+    bottom: -5px;
+    width: 3px;
+    background: var(--accent);
+    cursor: grab;
+    touch-action: none;
+    transform: translateX(-50%);
+    z-index: 2;
+  }
+  .loop-marker:active { cursor: grabbing; }
+  .loop-marker-label {
+    position: absolute;
+    top: -15px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  .ab-loop-buttons, .speed-buttons {
+    display: flex;
+    gap: 6px;
+  }
+  .settings-label-wide { width: auto; }
+
+  .sleep-control { position: relative; display: flex; align-items: center; gap: 8px; }
+  .sleep-remaining {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    white-space: nowrap;
+  }
+  .sleep-menu {
+    position: absolute;
+    bottom: calc(100% + 10px);
+    right: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px;
+    border-radius: 10px;
+    background: var(--surface-raised);
+    box-shadow: 0 12px 28px -8px rgba(0, 0, 0, 0.5);
+    z-index: 5;
+    min-width: 168px;
+  }
+  .sleep-menu button {
+    background: none;
+    border: none;
+    color: var(--text);
+    text-align: left;
+    padding: 7px 10px;
+    border-radius: 6px;
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .sleep-menu button:hover { background: var(--track-bg); }
+  .sleep-menu button.sleep-menu-off { color: var(--text-dim); }
+
   .volume-ios-note {
     flex: 1;
     font-size: 12px;
@@ -877,6 +949,27 @@
         </div>
         <p class="settings-note settings-note-block" id="iosAudioNote" hidden>Equalizer and crossfade aren't available on iOS — playing audio directly is what lets music keep going with the screen locked.</p>
 
+        <p class="settings-heading">Practice mode</p>
+        <div class="settings-stack">
+          <div class="ab-loop-buttons" id="abLoopButtons">
+            <button type="button" class="eq-preset-btn" id="setABtn">Set A</button>
+            <button type="button" class="eq-preset-btn" id="setBBtn">Set B</button>
+            <button type="button" class="eq-preset-btn" id="loopABBtn" aria-pressed="false">Loop A→B</button>
+            <button type="button" class="eq-preset-btn" id="clearLoopBtn">Clear</button>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label settings-label-wide">Speed</span>
+          </div>
+          <div class="speed-buttons" id="speedButtons">
+            <button type="button" class="eq-preset-btn" data-speed="0.5">0.5x</button>
+            <button type="button" class="eq-preset-btn" data-speed="0.75">0.75x</button>
+            <button type="button" class="eq-preset-btn active" data-speed="1">1x</button>
+            <button type="button" class="eq-preset-btn" data-speed="1.25">1.25x</button>
+            <button type="button" class="eq-preset-btn" data-speed="1.5">1.5x</button>
+          </div>
+        </div>
+        <p class="settings-note" id="speedIosNote" hidden>Pitch may shift slightly at non-1x speeds on iOS.</p>
+
         <p class="settings-heading">Library</p>
         <div class="settings-row">
           <span class="settings-label">Export</span>
@@ -959,6 +1052,9 @@
       <div class="waveform-played-clip" id="waveformPlayedClip">
         <canvas class="waveform-played" id="waveformPlayed"></canvas>
       </div>
+      <div class="loop-region" id="loopRegion" hidden></div>
+      <div class="loop-marker" id="markerA" hidden><span class="loop-marker-label">A</span></div>
+      <div class="loop-marker" id="markerB" hidden><span class="loop-marker-label">B</span></div>
       <div class="progress-handle" id="progressHandle"></div>
     </div>
     <div class="time-row">
@@ -994,6 +1090,20 @@
     <svg id="volumeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.5 8.5a5 5 0 0 1 0 7"></path></svg>
     <input type="range" class="volume" id="volumeSlider" min="0" max="100" value="70" aria-label="Volume">
     <span class="volume-ios-note" id="volumeIosNote" hidden>Use your device's volume buttons</span>
+    <div class="sleep-control">
+      <span class="sleep-remaining" id="sleepRemaining" hidden></span>
+      <button type="button" class="btn secondary" id="sleepBtn" aria-label="Sleep timer" title="Sleep timer" aria-haspopup="true" aria-expanded="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+      </button>
+      <div class="sleep-menu" id="sleepMenu" role="menu" aria-label="Sleep timer options" hidden>
+        <button type="button" data-sleep="15">15 min</button>
+        <button type="button" data-sleep="30">30 min</button>
+        <button type="button" data-sleep="45">45 min</button>
+        <button type="button" data-sleep="60">60 min</button>
+        <button type="button" data-sleep="end">End of current track</button>
+        <button type="button" class="sleep-menu-off" data-sleep="off">Off</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1287,6 +1397,9 @@
   const waveformBaseCtx = waveformBase.getContext('2d');
   const waveformPlayedCtx = waveformPlayed.getContext('2d');
   const progressHandle = document.getElementById('progressHandle');
+  const markerA = document.getElementById('markerA');
+  const markerB = document.getElementById('markerB');
+  const loopRegion = document.getElementById('loopRegion');
   const currentTimeEl = document.getElementById('currentTime');
   const durationEl = document.getElementById('duration');
   const volumeSlider = document.getElementById('volumeSlider');
@@ -1379,6 +1492,8 @@
     applyMoodTheme(track.mood);
     offerResume(track);
     loadWaveformForTrack(track);
+    resetPracticeModeForNewTrack();
+    updateLoopMarkersUI();
   }
 
   // ---------------------------------------------------------------------
@@ -1620,6 +1735,151 @@
     }
   }
 
+  // ---------------------------------------------------------------------
+  // Practice mode: an A/B loop (drag markers on the waveform, or "Set A"/
+  // "Set B" buttons) and variable playback speed. Both work with a plain
+  // <audio> element — playbackRate and timeupdate need no Web Audio graph
+  // — so unlike the equalizer/crossfade, this section isn't hidden on iOS.
+  // ---------------------------------------------------------------------
+  let loopA = null;   // seconds, or null
+  let loopB = null;
+  let loopEnabled = false;
+
+  const setABtn = document.getElementById('setABtn');
+  const setBBtn = document.getElementById('setBBtn');
+  const loopABBtn = document.getElementById('loopABBtn');
+  const clearLoopBtn = document.getElementById('clearLoopBtn');
+  const speedButtons = [...document.querySelectorAll('.speed-buttons .eq-preset-btn')];
+  const speedIosNote = document.getElementById('speedIosNote');
+
+  function updateLoopMarkersUI() {
+    const el = activeEl();
+    const duration = el.duration;
+    const validDuration = Number.isFinite(duration) && duration > 0;
+
+    if (loopA != null && validDuration) {
+      markerA.hidden = false;
+      markerA.style.left = (loopA / duration * 100) + '%';
+    } else {
+      markerA.hidden = true;
+    }
+
+    if (loopB != null && validDuration) {
+      markerB.hidden = false;
+      markerB.style.left = (loopB / duration * 100) + '%';
+    } else {
+      markerB.hidden = true;
+    }
+
+    if (loopA != null && loopB != null && validDuration && loopB > loopA) {
+      loopRegion.hidden = false;
+      loopRegion.style.left = (loopA / duration * 100) + '%';
+      loopRegion.style.width = ((loopB - loopA) / duration * 100) + '%';
+    } else {
+      loopRegion.hidden = true;
+    }
+  }
+
+  function clearLoop() {
+    loopA = null;
+    loopB = null;
+    loopEnabled = false;
+    loopABBtn.classList.remove('active');
+    loopABBtn.setAttribute('aria-pressed', 'false');
+    updateLoopMarkersUI();
+  }
+
+  setABtn.addEventListener('click', () => {
+    loopA = activeEl().currentTime;
+    if (loopB != null && loopB <= loopA) loopB = null; // B must stay after A
+    updateLoopMarkersUI();
+  });
+  setBBtn.addEventListener('click', () => {
+    const t = activeEl().currentTime;
+    if (loopA != null && t <= loopA) return; // ignore an invalid B rather than silently accepting one
+    loopB = t;
+    updateLoopMarkersUI();
+  });
+  loopABBtn.addEventListener('click', () => {
+    if (loopA == null || loopB == null) return;
+    loopEnabled = !loopEnabled;
+    loopABBtn.classList.toggle('active', loopEnabled);
+    loopABBtn.setAttribute('aria-pressed', String(loopEnabled));
+  });
+  clearLoopBtn.addEventListener('click', clearLoop);
+
+  // Dragging a marker directly on the bar. stopPropagation keeps this from
+  // also being read as a seek by progressBar's own pointerdown handler.
+  function startMarkerDrag(e, which) {
+    e.preventDefault();
+    e.stopPropagation();
+    const marker = which === 'A' ? markerA : markerB;
+    try { marker.setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointer */ }
+
+    const move = (ev) => {
+      const el = activeEl();
+      if (!Number.isFinite(el.duration) || el.duration <= 0) return;
+      const rect = progressBar.getBoundingClientRect();
+      let pct = (ev.clientX - rect.left) / rect.width;
+      pct = Math.min(1, Math.max(0, pct));
+      const t = pct * el.duration;
+      if (which === 'A') loopA = loopB != null ? Math.min(t, loopB - 0.1) : t;
+      else loopB = loopA != null ? Math.max(t, loopA + 0.1) : t;
+      updateLoopMarkersUI();
+    };
+    const up = () => {
+      marker.removeEventListener('pointermove', move);
+      marker.removeEventListener('pointerup', up);
+      marker.removeEventListener('pointercancel', up);
+    };
+    marker.addEventListener('pointermove', move);
+    marker.addEventListener('pointerup', up);
+    marker.addEventListener('pointercancel', up);
+  }
+  markerA.addEventListener('pointerdown', (e) => startMarkerDrag(e, 'A'));
+  markerB.addEventListener('pointerdown', (e) => startMarkerDrag(e, 'B'));
+
+  // preservesPitch keeps a slowed/sped-up track from chipmunking; applied to
+  // both elements (mirroring applyVolume()) so a crossfade mid-adjustment
+  // doesn't land on a differently-configured element.
+  let currentSpeed = 1;
+  function applySpeed(speed) {
+    currentSpeed = speed;
+    [audioA, audioB].forEach((el) => {
+      el.playbackRate = speed;
+      el.preservesPitch = true;
+      el.mozPreservesPitch = true;
+      el.webkitPreservesPitch = true;
+    });
+    speedButtons.forEach((btn) => btn.classList.toggle('active', Number(btn.dataset.speed) === speed));
+  }
+  speedButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const v = Number(btn.dataset.speed);
+      // The "last used" preference, restored on the next page load only —
+      // never auto-applied to a track change within a session (see below).
+      localStorage.setItem('pulse:speed', String(v));
+      applySpeed(v);
+    });
+  });
+  // Every *track change* resets speed to 1x and drops the loop (a slowed
+  // speed or a loop range from the last song silently carrying into a new
+  // one would be a confusing default) — but the very first track loaded at
+  // startup is exempt, so a persisted speed preference still applies then.
+  let hasLoadedFirstTrack = false;
+  function resetPracticeModeForNewTrack() {
+    if (!hasLoadedFirstTrack) {
+      hasLoadedFirstTrack = true;
+      // Assigning this track's <audio>.src just reset playbackRate to 1 even
+      // though restoreSettings() already set currentSpeed from localStorage
+      // moments earlier — re-apply now that the element actually has a src.
+      applySpeed(currentSpeed);
+      return;
+    }
+    clearLoop();
+    applySpeed(1);
+  }
+
   function resetProgressUI() {
     waveformPlayedClip.style.width = '0%';
     progressHandle.style.left = '0%';
@@ -1755,8 +2015,129 @@
     }
   });
 
+  // ---------------------------------------------------------------------
+  // Sleep timer. Wall-clock based (an absolute target timestamp, not a
+  // running countdown) so it self-corrects after any number of missed
+  // setInterval ticks while the app is backgrounded or the screen is
+  // locked, rather than drifting. Runs independently of playback state —
+  // pausing or changing tracks doesn't touch it, only an explicit cancel
+  // (or it firing) does.
+  // ---------------------------------------------------------------------
+  let sleepTargetAt = null;    // absolute Date.now() timestamp, or null when off
+  let sleepEndOfTrack = false;
+  let sleepTickInterval = null;
+  let sleepFading = false;
+
+  const sleepBtn = document.getElementById('sleepBtn');
+  const sleepMenu = document.getElementById('sleepMenu');
+  const sleepRemaining = document.getElementById('sleepRemaining');
+
+  function updateSleepUI() {
+    const active = sleepTargetAt != null || sleepEndOfTrack;
+    sleepBtn.classList.toggle('toggled', active);
+    sleepRemaining.hidden = !active;
+    if (sleepEndOfTrack) sleepRemaining.textContent = 'End of track';
+    else if (!sleepTargetAt) sleepRemaining.textContent = '';
+  }
+
+  function clearSleepTimer() {
+    sleepTargetAt = null;
+    sleepEndOfTrack = false;
+    sleepFading = false;
+    if (sleepTickInterval) { clearInterval(sleepTickInterval); sleepTickInterval = null; }
+    updateSleepUI();
+  }
+
+  // Ramping this slot's gain to 0 (mirroring the crossfade fade-out) rather
+  // than cutting playback off abruptly. Only possible where the Web Audio
+  // graph exists at all — on iOS there's no gain node to ramp, so it just
+  // pauses directly, per the same iOS-has-no-audio-graph design as the
+  // volume slider and equalizer.
+  function fadeOutAndStop() {
+    if (sleepFading) return;
+    sleepFading = true;
+    const el = activeEl();
+    const slot = webAudioSlots[activeSlot];
+    if (audioCtx && slot) {
+      const gainParam = slot.gain.gain;
+      const now = audioCtx.currentTime;
+      const fadeSeconds = 3.5;
+      gainParam.cancelScheduledValues(now);
+      gainParam.setValueAtTime(gainParam.value, now);
+      gainParam.linearRampToValueAtTime(0, now + fadeSeconds);
+      setTimeout(() => {
+        el.pause();
+        gainParam.value = 1; // reset for this slot's next playthrough
+        clearSleepTimer();
+      }, fadeSeconds * 1000 + 150);
+    } else {
+      el.pause();
+      clearSleepTimer();
+    }
+  }
+
+  function tickSleepTimer() {
+    if (sleepTargetAt == null) return;
+    const msLeft = sleepTargetAt - Date.now();
+    if (msLeft <= 0) {
+      fadeOutAndStop();
+      return;
+    }
+    const totalSeconds = Math.ceil(msLeft / 1000);
+    const m = Math.floor(totalSeconds / 60);
+    const s = totalSeconds % 60;
+    sleepRemaining.textContent = `${m}:${s.toString().padStart(2, '0')}`;
+  }
+
+  function startSleepDuration(minutes) {
+    sleepEndOfTrack = false;
+    sleepFading = false;
+    sleepTargetAt = Date.now() + minutes * 60000;
+    if (sleepTickInterval) clearInterval(sleepTickInterval);
+    sleepTickInterval = setInterval(tickSleepTimer, 1000);
+    updateSleepUI();
+    tickSleepTimer();
+  }
+
+  function startSleepEndOfTrack() {
+    if (sleepTickInterval) { clearInterval(sleepTickInterval); sleepTickInterval = null; }
+    sleepTargetAt = null;
+    sleepFading = false;
+    sleepEndOfTrack = true;
+    updateSleepUI();
+  }
+
+  // Ticking on an interval alone would drift (or just not fire) while
+  // backgrounded; recomputing from Date.now() the moment the app is
+  // foregrounded again corrects the display immediately either way.
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) tickSleepTimer();
+  });
+
+  sleepBtn.addEventListener('click', () => {
+    const opening = sleepMenu.hidden;
+    sleepMenu.hidden = !opening;
+    sleepBtn.setAttribute('aria-expanded', String(opening));
+  });
+  sleepMenu.querySelectorAll('button[data-sleep]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const v = btn.dataset.sleep;
+      if (v === 'off') clearSleepTimer();
+      else if (v === 'end') startSleepEndOfTrack();
+      else startSleepDuration(Number(v));
+      sleepMenu.hidden = true;
+      sleepBtn.setAttribute('aria-expanded', 'false');
+    });
+  });
+
   function handleTimeUpdate(el) {
     if (!isActive(el) || isSeeking) return;
+    // On iOS, timeupdate fires roughly every 250ms rather than continuously,
+    // so the loop-back point can overshoot B by up to that much — an
+    // expected platform limitation, not something to busy-poll around.
+    if (loopEnabled && loopA != null && loopB != null && el.currentTime >= loopB) {
+      el.currentTime = loopA;
+    }
     if (pendingResume && el.currentTime >= pendingResume.position) hideResumePrompt();
     savePosition();
     const pct = el.duration ? (el.currentTime / el.duration) * 100 : 0;
@@ -1791,6 +2172,11 @@
     if (!isActive(el)) return;
     const finished = tracks[trackIndex];
     if (finished) clearPosition(finished.id);
+    if (sleepEndOfTrack) {
+      sleepEndOfTrack = false;
+      updateSleepUI();
+      return; // already at the end; nothing left to fade or pause
+    }
     if (repeatBtn.classList.contains('toggled')) {
       el.currentTime = 0;
       el.play().catch(() => {});
@@ -1945,7 +2331,7 @@
     bass: { bass: 6, mid: 0, treble: 0 },
     vocal: { bass: 0, mid: 4, treble: 0 },
   };
-  const eqPresetButtons = [...document.querySelectorAll('.eq-preset-btn')];
+  const eqPresetButtons = [...document.querySelectorAll('#eqPresets .eq-preset-btn')];
 
   function updateEQPresetHighlight() {
     const bass = Number(eqBassSlider.value);
@@ -4185,6 +4571,10 @@
     if (savedMid !== null) eqMidSlider.value = savedMid;
     if (savedTreble !== null) eqTrebleSlider.value = savedTreble;
     updateEQPresetHighlight();
+
+    const savedSpeed = Number(localStorage.getItem('pulse:speed'));
+    if (savedSpeed) applySpeed(savedSpeed);
+    if (IS_IOS) speedIosNote.hidden = false;
   }
 
   async function init() {

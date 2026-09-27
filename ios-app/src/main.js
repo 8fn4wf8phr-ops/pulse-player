@@ -269,6 +269,9 @@
   const waveformBaseCtx = waveformBase.getContext('2d');
   const waveformPlayedCtx = waveformPlayed.getContext('2d');
   const progressHandle = document.getElementById('progressHandle');
+  const markerA = document.getElementById('markerA');
+  const markerB = document.getElementById('markerB');
+  const loopRegion = document.getElementById('loopRegion');
   const currentTimeEl = document.getElementById('currentTime');
   const durationEl = document.getElementById('duration');
   const volumeSlider = document.getElementById('volumeSlider');
@@ -361,6 +364,8 @@
     applyMoodTheme(track.mood);
     offerResume(track);
     loadWaveformForTrack(track);
+    resetPracticeModeForNewTrack();
+    updateLoopMarkersUI();
   }
 
   // ---------------------------------------------------------------------
@@ -602,6 +607,151 @@
     }
   }
 
+  // ---------------------------------------------------------------------
+  // Practice mode: an A/B loop (drag markers on the waveform, or "Set A"/
+  // "Set B" buttons) and variable playback speed. Both work with a plain
+  // <audio> element — playbackRate and timeupdate need no Web Audio graph
+  // — so unlike the equalizer/crossfade, this section isn't hidden on iOS.
+  // ---------------------------------------------------------------------
+  let loopA = null;   // seconds, or null
+  let loopB = null;
+  let loopEnabled = false;
+
+  const setABtn = document.getElementById('setABtn');
+  const setBBtn = document.getElementById('setBBtn');
+  const loopABBtn = document.getElementById('loopABBtn');
+  const clearLoopBtn = document.getElementById('clearLoopBtn');
+  const speedButtons = [...document.querySelectorAll('.speed-buttons .eq-preset-btn')];
+  const speedIosNote = document.getElementById('speedIosNote');
+
+  function updateLoopMarkersUI() {
+    const el = activeEl();
+    const duration = el.duration;
+    const validDuration = Number.isFinite(duration) && duration > 0;
+
+    if (loopA != null && validDuration) {
+      markerA.hidden = false;
+      markerA.style.left = (loopA / duration * 100) + '%';
+    } else {
+      markerA.hidden = true;
+    }
+
+    if (loopB != null && validDuration) {
+      markerB.hidden = false;
+      markerB.style.left = (loopB / duration * 100) + '%';
+    } else {
+      markerB.hidden = true;
+    }
+
+    if (loopA != null && loopB != null && validDuration && loopB > loopA) {
+      loopRegion.hidden = false;
+      loopRegion.style.left = (loopA / duration * 100) + '%';
+      loopRegion.style.width = ((loopB - loopA) / duration * 100) + '%';
+    } else {
+      loopRegion.hidden = true;
+    }
+  }
+
+  function clearLoop() {
+    loopA = null;
+    loopB = null;
+    loopEnabled = false;
+    loopABBtn.classList.remove('active');
+    loopABBtn.setAttribute('aria-pressed', 'false');
+    updateLoopMarkersUI();
+  }
+
+  setABtn.addEventListener('click', () => {
+    loopA = activeEl().currentTime;
+    if (loopB != null && loopB <= loopA) loopB = null; // B must stay after A
+    updateLoopMarkersUI();
+  });
+  setBBtn.addEventListener('click', () => {
+    const t = activeEl().currentTime;
+    if (loopA != null && t <= loopA) return; // ignore an invalid B rather than silently accepting one
+    loopB = t;
+    updateLoopMarkersUI();
+  });
+  loopABBtn.addEventListener('click', () => {
+    if (loopA == null || loopB == null) return;
+    loopEnabled = !loopEnabled;
+    loopABBtn.classList.toggle('active', loopEnabled);
+    loopABBtn.setAttribute('aria-pressed', String(loopEnabled));
+  });
+  clearLoopBtn.addEventListener('click', clearLoop);
+
+  // Dragging a marker directly on the bar. stopPropagation keeps this from
+  // also being read as a seek by progressBar's own pointerdown handler.
+  function startMarkerDrag(e, which) {
+    e.preventDefault();
+    e.stopPropagation();
+    const marker = which === 'A' ? markerA : markerB;
+    try { marker.setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointer */ }
+
+    const move = (ev) => {
+      const el = activeEl();
+      if (!Number.isFinite(el.duration) || el.duration <= 0) return;
+      const rect = progressBar.getBoundingClientRect();
+      let pct = (ev.clientX - rect.left) / rect.width;
+      pct = Math.min(1, Math.max(0, pct));
+      const t = pct * el.duration;
+      if (which === 'A') loopA = loopB != null ? Math.min(t, loopB - 0.1) : t;
+      else loopB = loopA != null ? Math.max(t, loopA + 0.1) : t;
+      updateLoopMarkersUI();
+    };
+    const up = () => {
+      marker.removeEventListener('pointermove', move);
+      marker.removeEventListener('pointerup', up);
+      marker.removeEventListener('pointercancel', up);
+    };
+    marker.addEventListener('pointermove', move);
+    marker.addEventListener('pointerup', up);
+    marker.addEventListener('pointercancel', up);
+  }
+  markerA.addEventListener('pointerdown', (e) => startMarkerDrag(e, 'A'));
+  markerB.addEventListener('pointerdown', (e) => startMarkerDrag(e, 'B'));
+
+  // preservesPitch keeps a slowed/sped-up track from chipmunking; applied to
+  // both elements (mirroring applyVolume()) so a crossfade mid-adjustment
+  // doesn't land on a differently-configured element.
+  let currentSpeed = 1;
+  function applySpeed(speed) {
+    currentSpeed = speed;
+    [audioA, audioB].forEach((el) => {
+      el.playbackRate = speed;
+      el.preservesPitch = true;
+      el.mozPreservesPitch = true;
+      el.webkitPreservesPitch = true;
+    });
+    speedButtons.forEach((btn) => btn.classList.toggle('active', Number(btn.dataset.speed) === speed));
+  }
+  speedButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const v = Number(btn.dataset.speed);
+      // The "last used" preference, restored on the next page load only —
+      // never auto-applied to a track change within a session (see below).
+      localStorage.setItem('pulse:speed', String(v));
+      applySpeed(v);
+    });
+  });
+  // Every *track change* resets speed to 1x and drops the loop (a slowed
+  // speed or a loop range from the last song silently carrying into a new
+  // one would be a confusing default) — but the very first track loaded at
+  // startup is exempt, so a persisted speed preference still applies then.
+  let hasLoadedFirstTrack = false;
+  function resetPracticeModeForNewTrack() {
+    if (!hasLoadedFirstTrack) {
+      hasLoadedFirstTrack = true;
+      // Assigning this track's <audio>.src just reset playbackRate to 1 even
+      // though restoreSettings() already set currentSpeed from localStorage
+      // moments earlier — re-apply now that the element actually has a src.
+      applySpeed(currentSpeed);
+      return;
+    }
+    clearLoop();
+    applySpeed(1);
+  }
+
   function resetProgressUI() {
     waveformPlayedClip.style.width = '0%';
     progressHandle.style.left = '0%';
@@ -737,8 +887,129 @@
     }
   });
 
+  // ---------------------------------------------------------------------
+  // Sleep timer. Wall-clock based (an absolute target timestamp, not a
+  // running countdown) so it self-corrects after any number of missed
+  // setInterval ticks while the app is backgrounded or the screen is
+  // locked, rather than drifting. Runs independently of playback state —
+  // pausing or changing tracks doesn't touch it, only an explicit cancel
+  // (or it firing) does.
+  // ---------------------------------------------------------------------
+  let sleepTargetAt = null;    // absolute Date.now() timestamp, or null when off
+  let sleepEndOfTrack = false;
+  let sleepTickInterval = null;
+  let sleepFading = false;
+
+  const sleepBtn = document.getElementById('sleepBtn');
+  const sleepMenu = document.getElementById('sleepMenu');
+  const sleepRemaining = document.getElementById('sleepRemaining');
+
+  function updateSleepUI() {
+    const active = sleepTargetAt != null || sleepEndOfTrack;
+    sleepBtn.classList.toggle('toggled', active);
+    sleepRemaining.hidden = !active;
+    if (sleepEndOfTrack) sleepRemaining.textContent = 'End of track';
+    else if (!sleepTargetAt) sleepRemaining.textContent = '';
+  }
+
+  function clearSleepTimer() {
+    sleepTargetAt = null;
+    sleepEndOfTrack = false;
+    sleepFading = false;
+    if (sleepTickInterval) { clearInterval(sleepTickInterval); sleepTickInterval = null; }
+    updateSleepUI();
+  }
+
+  // Ramping this slot's gain to 0 (mirroring the crossfade fade-out) rather
+  // than cutting playback off abruptly. Only possible where the Web Audio
+  // graph exists at all — on iOS there's no gain node to ramp, so it just
+  // pauses directly, per the same iOS-has-no-audio-graph design as the
+  // volume slider and equalizer.
+  function fadeOutAndStop() {
+    if (sleepFading) return;
+    sleepFading = true;
+    const el = activeEl();
+    const slot = webAudioSlots[activeSlot];
+    if (audioCtx && slot) {
+      const gainParam = slot.gain.gain;
+      const now = audioCtx.currentTime;
+      const fadeSeconds = 3.5;
+      gainParam.cancelScheduledValues(now);
+      gainParam.setValueAtTime(gainParam.value, now);
+      gainParam.linearRampToValueAtTime(0, now + fadeSeconds);
+      setTimeout(() => {
+        el.pause();
+        gainParam.value = 1; // reset for this slot's next playthrough
+        clearSleepTimer();
+      }, fadeSeconds * 1000 + 150);
+    } else {
+      el.pause();
+      clearSleepTimer();
+    }
+  }
+
+  function tickSleepTimer() {
+    if (sleepTargetAt == null) return;
+    const msLeft = sleepTargetAt - Date.now();
+    if (msLeft <= 0) {
+      fadeOutAndStop();
+      return;
+    }
+    const totalSeconds = Math.ceil(msLeft / 1000);
+    const m = Math.floor(totalSeconds / 60);
+    const s = totalSeconds % 60;
+    sleepRemaining.textContent = `${m}:${s.toString().padStart(2, '0')}`;
+  }
+
+  function startSleepDuration(minutes) {
+    sleepEndOfTrack = false;
+    sleepFading = false;
+    sleepTargetAt = Date.now() + minutes * 60000;
+    if (sleepTickInterval) clearInterval(sleepTickInterval);
+    sleepTickInterval = setInterval(tickSleepTimer, 1000);
+    updateSleepUI();
+    tickSleepTimer();
+  }
+
+  function startSleepEndOfTrack() {
+    if (sleepTickInterval) { clearInterval(sleepTickInterval); sleepTickInterval = null; }
+    sleepTargetAt = null;
+    sleepFading = false;
+    sleepEndOfTrack = true;
+    updateSleepUI();
+  }
+
+  // Ticking on an interval alone would drift (or just not fire) while
+  // backgrounded; recomputing from Date.now() the moment the app is
+  // foregrounded again corrects the display immediately either way.
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) tickSleepTimer();
+  });
+
+  sleepBtn.addEventListener('click', () => {
+    const opening = sleepMenu.hidden;
+    sleepMenu.hidden = !opening;
+    sleepBtn.setAttribute('aria-expanded', String(opening));
+  });
+  sleepMenu.querySelectorAll('button[data-sleep]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const v = btn.dataset.sleep;
+      if (v === 'off') clearSleepTimer();
+      else if (v === 'end') startSleepEndOfTrack();
+      else startSleepDuration(Number(v));
+      sleepMenu.hidden = true;
+      sleepBtn.setAttribute('aria-expanded', 'false');
+    });
+  });
+
   function handleTimeUpdate(el) {
     if (!isActive(el) || isSeeking) return;
+    // On iOS, timeupdate fires roughly every 250ms rather than continuously,
+    // so the loop-back point can overshoot B by up to that much — an
+    // expected platform limitation, not something to busy-poll around.
+    if (loopEnabled && loopA != null && loopB != null && el.currentTime >= loopB) {
+      el.currentTime = loopA;
+    }
     if (pendingResume && el.currentTime >= pendingResume.position) hideResumePrompt();
     savePosition();
     const pct = el.duration ? (el.currentTime / el.duration) * 100 : 0;
@@ -773,6 +1044,11 @@
     if (!isActive(el)) return;
     const finished = tracks[trackIndex];
     if (finished) clearPosition(finished.id);
+    if (sleepEndOfTrack) {
+      sleepEndOfTrack = false;
+      updateSleepUI();
+      return; // already at the end; nothing left to fade or pause
+    }
     if (repeatBtn.classList.contains('toggled')) {
       el.currentTime = 0;
       el.play().catch(() => {});
@@ -927,7 +1203,7 @@
     bass: { bass: 6, mid: 0, treble: 0 },
     vocal: { bass: 0, mid: 4, treble: 0 },
   };
-  const eqPresetButtons = [...document.querySelectorAll('.eq-preset-btn')];
+  const eqPresetButtons = [...document.querySelectorAll('#eqPresets .eq-preset-btn')];
 
   function updateEQPresetHighlight() {
     const bass = Number(eqBassSlider.value);
@@ -3171,6 +3447,10 @@
     if (savedMid !== null) eqMidSlider.value = savedMid;
     if (savedTreble !== null) eqTrebleSlider.value = savedTreble;
     updateEQPresetHighlight();
+
+    const savedSpeed = Number(localStorage.getItem('pulse:speed'));
+    if (savedSpeed) applySpeed(savedSpeed);
+    if (IS_IOS) speedIosNote.hidden = false;
   }
 
   async function init() {

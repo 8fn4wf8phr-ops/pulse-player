@@ -99,6 +99,27 @@
         </div>
         <p class="settings-note settings-note-block" id="iosAudioNote" hidden>Equalizer and crossfade aren't available on iOS — playing audio directly is what lets music keep going with the screen locked.</p>
 
+        <p class="settings-heading">Practice mode</p>
+        <div class="settings-stack">
+          <div class="ab-loop-buttons" id="abLoopButtons">
+            <button type="button" class="eq-preset-btn" id="setABtn">Set A</button>
+            <button type="button" class="eq-preset-btn" id="setBBtn">Set B</button>
+            <button type="button" class="eq-preset-btn" id="loopABBtn" aria-pressed="false">Loop A→B</button>
+            <button type="button" class="eq-preset-btn" id="clearLoopBtn">Clear</button>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label settings-label-wide">Speed</span>
+          </div>
+          <div class="speed-buttons" id="speedButtons">
+            <button type="button" class="eq-preset-btn" data-speed="0.5">0.5x</button>
+            <button type="button" class="eq-preset-btn" data-speed="0.75">0.75x</button>
+            <button type="button" class="eq-preset-btn active" data-speed="1">1x</button>
+            <button type="button" class="eq-preset-btn" data-speed="1.25">1.25x</button>
+            <button type="button" class="eq-preset-btn" data-speed="1.5">1.5x</button>
+          </div>
+        </div>
+        <p class="settings-note" id="speedIosNote" hidden>Pitch may shift slightly at non-1x speeds on iOS.</p>
+
         <p class="settings-heading">Library</p>
         <div class="settings-row">
           <span class="settings-label">Export</span>
@@ -181,6 +202,9 @@
       <div class="waveform-played-clip" id="waveformPlayedClip">
         <canvas class="waveform-played" id="waveformPlayed"></canvas>
       </div>
+      <div class="loop-region" id="loopRegion" hidden></div>
+      <div class="loop-marker" id="markerA" hidden><span class="loop-marker-label">A</span></div>
+      <div class="loop-marker" id="markerB" hidden><span class="loop-marker-label">B</span></div>
       <div class="progress-handle" id="progressHandle"></div>
     </div>
     <div class="time-row">
@@ -216,6 +240,20 @@
     <svg id="volumeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.5 8.5a5 5 0 0 1 0 7"></path></svg>
     <input type="range" class="volume" id="volumeSlider" min="0" max="100" value="70" aria-label="Volume">
     <span class="volume-ios-note" id="volumeIosNote" hidden>Use your device's volume buttons</span>
+    <div class="sleep-control">
+      <span class="sleep-remaining" id="sleepRemaining" hidden></span>
+      <button type="button" class="btn secondary" id="sleepBtn" aria-label="Sleep timer" title="Sleep timer" aria-haspopup="true" aria-expanded="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+      </button>
+      <div class="sleep-menu" id="sleepMenu" role="menu" aria-label="Sleep timer options" hidden>
+        <button type="button" data-sleep="15">15 min</button>
+        <button type="button" data-sleep="30">30 min</button>
+        <button type="button" data-sleep="45">45 min</button>
+        <button type="button" data-sleep="60">60 min</button>
+        <button type="button" data-sleep="end">End of current track</button>
+        <button type="button" class="sleep-menu-off" data-sleep="off">Off</button>
+      </div>
+    </div>
   </div>
 </div>
 
