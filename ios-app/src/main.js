@@ -263,7 +263,11 @@
   const playIcon = document.getElementById('playIcon');
   const pauseIcon = document.getElementById('pauseIcon');
   const progressBar = document.getElementById('progressBar');
-  const progressFill = document.getElementById('progressFill');
+  const waveformBase = document.getElementById('waveformBase');
+  const waveformPlayed = document.getElementById('waveformPlayed');
+  const waveformPlayedClip = document.getElementById('waveformPlayedClip');
+  const waveformBaseCtx = waveformBase.getContext('2d');
+  const waveformPlayedCtx = waveformPlayed.getContext('2d');
   const progressHandle = document.getElementById('progressHandle');
   const currentTimeEl = document.getElementById('currentTime');
   const durationEl = document.getElementById('duration');
@@ -356,6 +360,7 @@
     updateMediaSessionMetadata(track);
     applyMoodTheme(track.mood);
     offerResume(track);
+    loadWaveformForTrack(track);
   }
 
   // ---------------------------------------------------------------------
@@ -448,8 +453,157 @@
   window.addEventListener('pagehide', () => savePosition(true));
 
 
+  // ---------------------------------------------------------------------
+  // Waveform seek bar. Peaks are computed once per track (cached in memory,
+  // keyed by track id — or by url for a track that hasn't been assigned one
+  // yet) and drawn as two identical bar charts stacked on top of each other:
+  // a dim "unplayed" one underneath, and a bright "played" one in an
+  // overflow:hidden wrapper whose width tracks playback position. Revealing
+  // more of the played layer on every timeupdate is a CSS width change, not
+  // a canvas redraw — the actual bars are only ever drawn twice per track
+  // (once per layer), which is what keeps this cheap enough to update
+  // continuously without extra battery cost on a phone.
+  // ---------------------------------------------------------------------
+  const WAVEFORM_PEAK_COUNT = 120;
+  const waveformPeakCache = new Map();
+  let waveformToken = 0; // guards a slow decode from drawing over a track switched to in the meantime
+
+  // A dedicated context used only for decodeAudioData — never connected to
+  // any output, so it does no real-time audio work and has nothing to do
+  // with the playback graph (which setupAudioGraph() intentionally never
+  // creates on iOS at all). Decoding doesn't need the context to be resumed.
+  let waveformDecodeCtx = null;
+  function getWaveformDecodeCtx() {
+    if (!waveformDecodeCtx) waveformDecodeCtx = new (window.AudioContext || window.webkitAudioContext)();
+    return waveformDecodeCtx;
+  }
+
+  function waveformCacheKey(track) {
+    return track.id != null ? `id:${track.id}` : `url:${track.url}`;
+  }
+
+  // Peaks are the max sample magnitude in each of numPeaks even-width
+  // segments, taken across all channels and normalized so the loudest
+  // segment reaches 1 — a coarse inner stride keeps this from walking every
+  // sample of a long track, which matters more on a phone than a desktop.
+  function generateWaveformPeaks(audioBuffer, numPeaks) {
+    const length = audioBuffer.length;
+    const channelCount = audioBuffer.numberOfChannels;
+    const channels = [];
+    for (let ch = 0; ch < channelCount; ch++) channels.push(audioBuffer.getChannelData(ch));
+    const samplesPerPeak = Math.max(1, Math.floor(length / numPeaks));
+    const stride = Math.max(1, Math.floor(samplesPerPeak / 200));
+    const peaks = new Array(numPeaks).fill(0);
+
+    for (let p = 0; p < numPeaks; p++) {
+      const start = p * samplesPerPeak;
+      const end = Math.min(length, start + samplesPerPeak);
+      let max = 0;
+      for (let ch = 0; ch < channelCount; ch++) {
+        const data = channels[ch];
+        for (let i = start; i < end; i += stride) {
+          const v = data[i] < 0 ? -data[i] : data[i];
+          if (v > max) max = v;
+        }
+      }
+      peaks[p] = max;
+    }
+
+    const loudest = peaks.reduce((a, b) => (b > a ? b : a), 0) || 1;
+    return peaks.map((v) => v / loudest);
+  }
+
+  function sizeWaveformCanvases() {
+    const rect = progressBar.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    [[waveformBase, waveformBaseCtx], [waveformPlayed, waveformPlayedCtx]].forEach(([canvas, ctx]) => {
+      canvas.width = Math.max(1, Math.round(rect.width * dpr));
+      canvas.height = Math.max(1, Math.round(rect.height * dpr));
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    });
+    return { width: rect.width, height: rect.height };
+  }
+
+  function drawWaveformBars(ctx, peaks, width, height, color) {
+    ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = color;
+    const gap = 2;
+    const slot = width / peaks.length;
+    const barWidth = Math.max(1, slot - gap);
+    const minBarHeight = 2;
+    peaks.forEach((p, i) => {
+      const barHeight = Math.max(minBarHeight, p * height);
+      const x = i * slot;
+      const y = (height - barHeight) / 2;
+      ctx.fillRect(x, y, barWidth, barHeight);
+    });
+  }
+
+  function waveformAccentDimColor() {
+    return getComputedStyle(document.documentElement).getPropertyValue('--accent-dim').trim() || 'rgba(255,255,255,0.2)';
+  }
+  function waveformAccentColor() {
+    return getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#fff';
+  }
+
+  // A flat neutral placeholder while the real peaks are still decoding, so
+  // there's never a blank bar while a track is loading.
+  function drawWaveformPlaceholder() {
+    const { width, height } = sizeWaveformCanvases();
+    if (!width || !height) return;
+    const flat = new Array(WAVEFORM_PEAK_COUNT).fill(0.18);
+    drawWaveformBars(waveformBaseCtx, flat, width, height, waveformAccentDimColor());
+    drawWaveformBars(waveformPlayedCtx, flat, width, height, waveformAccentColor());
+  }
+
+  function drawWaveformPeaks(peaks) {
+    const { width, height } = sizeWaveformCanvases();
+    if (!width || !height) return;
+    drawWaveformBars(waveformBaseCtx, peaks, width, height, waveformAccentDimColor());
+    drawWaveformBars(waveformPlayedCtx, peaks, width, height, waveformAccentColor());
+  }
+
+  let currentWaveformPeaks = null;
+
+  function redrawCurrentWaveform() {
+    if (currentWaveformPeaks) drawWaveformPeaks(currentWaveformPeaks);
+    else drawWaveformPlaceholder();
+  }
+  window.addEventListener('resize', redrawCurrentWaveform);
+
+  async function loadWaveformForTrack(track) {
+    const token = ++waveformToken;
+    const key = waveformCacheKey(track);
+    const cached = waveformPeakCache.get(key);
+    if (cached) {
+      currentWaveformPeaks = cached;
+      drawWaveformPeaks(cached);
+      return;
+    }
+
+    currentWaveformPeaks = null;
+    drawWaveformPlaceholder();
+
+    try {
+      const response = await fetch(track.url);
+      const arrayBuffer = await response.arrayBuffer();
+      // decodeAudioData detaches the buffer it's given, so this can't reuse
+      // one already handed to something else — fetch() above gives it a
+      // fresh one, independent of the <audio> element's own playback.
+      const audioBuffer = await getWaveformDecodeCtx().decodeAudioData(arrayBuffer);
+      const peaks = generateWaveformPeaks(audioBuffer, WAVEFORM_PEAK_COUNT);
+      waveformPeakCache.set(key, peaks);
+      if (token !== waveformToken) return; // a different track loaded while this was decoding
+      currentWaveformPeaks = peaks;
+      drawWaveformPeaks(peaks);
+    } catch (err) {
+      console.warn('Pulse: could not generate waveform', err);
+      // leave the placeholder in place rather than showing nothing
+    }
+  }
+
   function resetProgressUI() {
-    progressFill.style.width = '0%';
+    waveformPlayedClip.style.width = '0%';
     progressHandle.style.left = '0%';
     currentTimeEl.textContent = '0:00';
     durationEl.textContent = '0:00';
@@ -588,7 +742,7 @@
     if (pendingResume && el.currentTime >= pendingResume.position) hideResumePrompt();
     savePosition();
     const pct = el.duration ? (el.currentTime / el.duration) * 100 : 0;
-    progressFill.style.width = pct + '%';
+    waveformPlayedClip.style.width = pct + '%';
     progressHandle.style.left = pct + '%';
     progressBar.setAttribute('aria-valuenow', Math.round(pct));
     currentTimeEl.textContent = formatTime(el.currentTime);
@@ -668,7 +822,7 @@
     const rect = progressBar.getBoundingClientRect();
     let pct = (clientX - rect.left) / rect.width;
     pct = Math.min(1, Math.max(0, pct));
-    progressFill.style.width = (pct * 100) + '%';
+    waveformPlayedClip.style.width = (pct * 100) + '%';
     progressHandle.style.left = (pct * 100) + '%';
     if (el.duration) {
       el.currentTime = pct * el.duration;
@@ -749,14 +903,58 @@
     localStorage.setItem('pulse:crossfadeSeconds', String(crossfadeSeconds));
   });
 
+  // Direct .value sets step instantly, which can click/zipper when a slider
+  // is dragged quickly (many gain jumps per second). setTargetAtTime glides
+  // to each new value instead — short enough to still feel immediate.
+  const EQ_SMOOTHING_SECONDS = 0.015;
+
   function applyEQ() {
     if (!audioCtx) return;
+    const now = audioCtx.currentTime;
+    const bass = Number(eqBassSlider.value);
+    const mid = Number(eqMidSlider.value);
+    const treble = Number(eqTrebleSlider.value);
     ['A', 'B'].forEach((key) => {
-      webAudioSlots[key].bass.gain.value = Number(eqBassSlider.value);
-      webAudioSlots[key].mid.gain.value = Number(eqMidSlider.value);
-      webAudioSlots[key].treble.gain.value = Number(eqTrebleSlider.value);
+      webAudioSlots[key].bass.gain.setTargetAtTime(bass, now, EQ_SMOOTHING_SECONDS);
+      webAudioSlots[key].mid.gain.setTargetAtTime(mid, now, EQ_SMOOTHING_SECONDS);
+      webAudioSlots[key].treble.gain.setTargetAtTime(treble, now, EQ_SMOOTHING_SECONDS);
+    });
+    updateEQPresetHighlight();
+  }
+
+  const EQ_PRESETS = {
+    flat: { bass: 0, mid: 0, treble: 0 },
+    bass: { bass: 6, mid: 0, treble: 0 },
+    vocal: { bass: 0, mid: 4, treble: 0 },
+  };
+  const eqPresetButtons = [...document.querySelectorAll('.eq-preset-btn')];
+
+  function updateEQPresetHighlight() {
+    const bass = Number(eqBassSlider.value);
+    const mid = Number(eqMidSlider.value);
+    const treble = Number(eqTrebleSlider.value);
+    eqPresetButtons.forEach((btn) => {
+      const p = EQ_PRESETS[btn.dataset.preset];
+      btn.classList.toggle('active', p.bass === bass && p.mid === mid && p.treble === treble);
     });
   }
+
+  function setEQValues(bass, mid, treble) {
+    eqBassSlider.value = bass;
+    eqMidSlider.value = mid;
+    eqTrebleSlider.value = treble;
+    localStorage.setItem('pulse:eqBass', bass);
+    localStorage.setItem('pulse:eqMid', mid);
+    localStorage.setItem('pulse:eqTreble', treble);
+    applyEQ();
+  }
+
+  eqPresetButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const p = EQ_PRESETS[btn.dataset.preset];
+      setEQValues(p.bass, p.mid, p.treble);
+    });
+  });
 
   [[eqBassSlider, 'pulse:eqBass'], [eqMidSlider, 'pulse:eqMid'], [eqTrebleSlider, 'pulse:eqTreble']].forEach(([slider, key]) => {
     slider.addEventListener('input', () => {
@@ -2972,6 +3170,7 @@
     if (savedBass !== null) eqBassSlider.value = savedBass;
     if (savedMid !== null) eqMidSlider.value = savedMid;
     if (savedTreble !== null) eqTrebleSlider.value = savedTreble;
+    updateEQPresetHighlight();
   }
 
   async function init() {

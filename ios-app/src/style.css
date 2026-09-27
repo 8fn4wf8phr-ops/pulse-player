@@ -223,6 +223,26 @@
   input[type="range"].settings-slider-full { flex: none; width: 100%; }
   .settings-note-block { margin: 0; }
 
+  .eq-presets {
+    display: flex;
+    gap: 6px;
+    margin: 2px 0 0;
+  }
+  .eq-preset-btn {
+    flex: 1;
+    min-width: 0;
+    background: var(--track-bg);
+    color: var(--text-dim);
+    border: none;
+    border-radius: 999px;
+    padding: 6px 4px;
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .eq-preset-btn:hover { color: var(--text); }
+  .eq-preset-btn.active { background: var(--accent-dim); color: var(--accent); }
+
   .volume-ios-note {
     flex: 1;
     font-size: 12px;
@@ -569,21 +589,28 @@
 
   .progress-bar {
     position: relative;
-    height: 6px;
-    border-radius: 999px;
-    background: var(--track-bg);
+    height: 32px;
+    border-radius: 6px;
     cursor: pointer;
   }
 
-  .progress-fill {
+  .waveform-base,
+  .waveform-played {
     position: absolute;
-    top: 0;
-    left: 0;
+    inset: 0;
+    width: 100%;
     height: 100%;
+    display: block;
+  }
+
+  /* The "played" portion is the exact same waveform drawn a second time in
+     the accent color; revealing it is just a width change on this wrapper,
+     not a redraw — cheap enough to do on every timeupdate. */
+  .waveform-played-clip {
+    position: absolute;
+    inset: 0;
     width: 0%;
-    background: var(--accent);
-    border-radius: 999px;
-    transition: background-color 0.6s ease;
+    overflow: hidden;
   }
 
   .progress-handle {

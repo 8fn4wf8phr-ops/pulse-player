@@ -91,6 +91,11 @@
             <span class="settings-label">Treble</span>
             <input type="range" class="eq-slider" id="eqTreble" min="-12" max="12" step="1" value="0" aria-label="Treble">
           </div>
+          <div class="eq-presets" id="eqPresets" role="group" aria-label="Equalizer presets">
+            <button type="button" class="eq-preset-btn" data-preset="flat">Flat</button>
+            <button type="button" class="eq-preset-btn" data-preset="bass">Bass Boost</button>
+            <button type="button" class="eq-preset-btn" data-preset="vocal">Vocal Boost</button>
+          </div>
         </div>
         <p class="settings-note settings-note-block" id="iosAudioNote" hidden>Equalizer and crossfade aren't available on iOS — playing audio directly is what lets music keep going with the screen locked.</p>
 
@@ -172,7 +177,10 @@
 
   <div class="progress-wrap">
     <div class="progress-bar" id="progressBar" role="slider" aria-label="Seek" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
-      <div class="progress-fill" id="progressFill"></div>
+      <canvas class="waveform-base" id="waveformBase"></canvas>
+      <div class="waveform-played-clip" id="waveformPlayedClip">
+        <canvas class="waveform-played" id="waveformPlayed"></canvas>
+      </div>
       <div class="progress-handle" id="progressHandle"></div>
     </div>
     <div class="time-row">
