@@ -3382,6 +3382,15 @@
     }
   }
 
+  // A raw ffmpeg.wasm/DOMException message means little to someone reading
+  // it on their phone, but it's the only diagnostic we have without devtools
+  // access on iOS — shown in parentheses so the "what to try" text still reads
+  // first, and so this is at least something a user can screenshot and relay.
+  function errDetail(err) {
+    const msg = (err && (err.message || err.name)) || String(err);
+    return msg ? ` (${msg})` : '';
+  }
+
   // Processes one file at a time — ffmpeg.wasm handles one job per
   // instance, and this also lets the status line show clear progress
   // per file instead of several conversions racing each other.
@@ -3394,7 +3403,7 @@
       await getFFmpeg();
     } catch (err) {
       console.warn('Pulse: failed to load ffmpeg.wasm', err);
-      setConvertStatus('Could not load the video converter — check your connection and try again.');
+      setConvertStatus(`Could not load the video converter — check your connection and try again.${errDetail(err)}`);
       return;
     }
 
@@ -3410,7 +3419,7 @@
         converted++;
       } catch (err) {
         console.warn('Pulse: video conversion failed', file.name, err);
-        setConvertStatus(`Couldn't convert ${file.name} — it may have no audio track, or be an unsupported format.`);
+        setConvertStatus(`Couldn't convert ${file.name} — it may have no audio track, or be an unsupported format.${errDetail(err)}`);
       }
     }
     currentConvertFilename = null;
