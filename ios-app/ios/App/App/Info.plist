@@ -24,6 +24,12 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Pulse needs access to your photo library to convert a video's audio to a track.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Pulse needs camera access to record a video to convert to a track.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Pulse needs microphone access to record a video to convert to a track.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
